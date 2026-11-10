@@ -2,7 +2,7 @@
 <html lang="en"><meta charset="utf-8"><title>Local simulator browser checks</title>
 <style>body{font:14px system-ui;margin:16px}iframe{width:100%;height:1000px;border:1px solid #ddd}pre{white-space:pre-wrap}</style>
 <h1>Simulator browser checks</h1><pre id="results" data-status="running">Running…</pre>
-<iframe id="app" title="Simulator under test" src="../index.html"></iframe>
+<iframe id="app" title="Simulator under test" src="../single-leg.html"></iframe>
 <script>
 const results=document.getElementById('results'), frame=document.getElementById('app');
 frame.addEventListener('load',async()=>{
@@ -39,7 +39,12 @@ frame.addEventListener('load',async()=>{
     check('step highlights first setup command',d.querySelector('#timeline tr.active')?.dataset.index==='0');
     $('showTrail').checked=false;$('showTrail').dispatchEvent(new w.Event('change'));
     check('canvas renders',scene.getContext('2d').getImageData(0,0,scene.width,scene.height).data.some((v,i)=>i%4!==3&&v<100));
+    const sceneLayout=d.querySelector('.leg-scene-layout');
+    check('joint controls share the scene workspace',sceneLayout.contains($('knee')));
     frame.style.width='360px';
+    const layoutBox=sceneLayout.getBoundingClientRect();
+    check('mobile canvas and joint sliders fit together within 650 pixels',$('knee').getBoundingClientRect().bottom-layoutBox.top<650);
+
     check('mobile layout has no horizontal overflow ('+d.documentElement.scrollWidth+'/'+w.innerWidth+')',d.documentElement.scrollWidth<=w.innerWidth);
     frame.style.width='100%';
     check('no browser errors',errors.length===0);

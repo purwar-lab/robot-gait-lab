@@ -1,6 +1,13 @@
-# 3-DOF Leg Arduino Motion Playground
+# Robot Gait Lab
 
-A standalone, offline simulator for freshman engineering students. Open `index.html` in a modern browser; no installation, external dependencies, or build step is needed.
+An interactive robotics playground for freshman engineering students: build robots with 2- or 3-DOF legs, explore walking gaits, and program motion with Arduino-style sketches.
+
+- **Robot builder and gait lab:** open `index.html` to design a body, attach legs, and coordinate walking.
+- **Single-leg lab:** open `single-leg.html` to explore joint motion, 3D foot trajectories, and orthographic projections.
+
+Both modules run offline in a modern browser, with no installation, external dependencies, or build step.
+
+Repository: [purwar-lab/robot-gait-lab](https://github.com/purwar-lab/robot-gait-lab). GitHub Pages: [Robot Gait Lab](https://purwar-lab.github.io/robot-gait-lab/). The separate [two-DOF simulator](https://purwar-lab.github.io/two-dof-leg/) is maintained independently.
 
 ## Using the playground
 
@@ -53,3 +60,45 @@ Run `node tests/simulator.test.cjs` for kinematics, projection orientation/frami
 With the local server running, open `http://127.0.0.1:8000/tests/browser.html` for browser smoke checks against the actual page, including narrow-layout overflow. The tests change only the embedded page's in-memory state.
 
 For local browser testing, open `index.html` directly or serve this folder with `python -m http.server 8000 --bind 127.0.0.1` and visit `http://127.0.0.1:8000`. The same file can be hosted on a static site such as GitHub Pages.
+
+
+## Robot builder and gait lab
+
+Open `index.html` to arrange 2?8 mounts on a rectangular or circular plate. Attach or detach individual legs and choose 2 or 3 DOF for each. The existing `single-leg.html` single-leg lab remains available.
+
+- Start with a hexapod or quadruped preset, or customize the plate dimensions and leg count.
+- Select a leg by clicking its hip or its mount card. Use the joint sliders or the one-leg Arduino example to test it with the chassis held still.
+- Choose a gait, stride, foot lift, and cycle time. Gaits include wave, tripod/ripple for six legs, trot/pace/bound for four, and alternating groups for other even counts.
+- Walk over the ground, pause, scrub a cycle, and inspect stance/swing phase tracks, foot trails, and the support polygon. Unreachable trajectories stop the Walk action and identify the problem.
+- Switch the sketch scope to Whole robot and generate a gait sketch. Every attached joint gets a named servo; 2-DOF legs omit the lateral motor. Check, run, or export the `.ino` file. Changing the design never overwrites editor text automatically.
+
+### Robot model
+
+World axes and joint signs match the single-leg lab (X sideways, Y down, Z forward). The ground is Y=0; the plate is at Y=?height. Links remain 140 model units. Mounts lie around the plate edge, with forward-swing axes aligned in the world Z direction. A 2-DOF leg uses a fixed 18-degree outward lateral bracket; a 3-DOF leg controls that lateral angle. The model does not add an independent coxa link or arbitrary mount yaw.
+
+In gait mode, inverse kinematics solves foot targets within 0?180-degree servo limits. Stance feet move backward relative to the body at exactly the body's forward speed, so their world positions stay fixed. Swing feet follow a smooth lifted path. Disabling Travel over ground holds the body still for inspection and therefore lets feet slide over the ground.
+
+One-leg sketches hold the chassis fixed. Whole-robot sketches estimate horizontal body translation from the incremental motion of at least two retained ground contacts. Contact entry/release use separate tolerances (0.5/0.9 units for all-pulse sketches, 3/5 units for degree or mixed sketches) to avoid contact chatter. The body is not pulled back toward conflicting historical anchors when contacts change. This remains approximate; contact disagreement is displayed as slip. Setup positions the joints with the chassis fixed; estimated travel begins in loop(). Penetration is shown, not resolved. The ideal gait preview is the exact planted-foot reference.
+
+The shaded polygon connects stance feet, and its center marker is the body center projected onto the floor. This is a geometric support demonstration, not a dynamic stability verdict. There is no simulation of gravity, tipping, friction, torque, collision response, or actual center of mass. All exported pin assignments are placeholders and require hardware-specific calibration.
+
+### Prototype files and tests
+
+`robot-core.js` contains pure kinematics, gait phases, support geometry, and sketch generation. `robot-arduino.js` adapts the existing restricted parser to named joints across multiple legs. `robot-motion.js` provides continuous sample interpolation and incremental contact estimation. `robot-app.js` connects the UI, camera, Canvas 3D scene, and code playback. These are ordinary browser scripts with no external dependencies or build system.
+
+Run `node tests/robot.test.cjs` for the robot-model regressions, `node tests/robot-playback.test.cjs` for code-playback precision/contact/timing regressions, and `node tests/simulator.test.cjs` for the original single-leg regressions. Open `tests/robot-browser.html` through a local server for robot UI smoke checks.
+
+
+### Generated code precision and smooth playback
+
+Generate gait sketch now defaults to **Fine pulses**: 32 samples per cycle, exported using `Servo.writeMicroseconds()`, with the corresponding modeled angle in a comment. The robot parser uses the [Arduino Servo library's default 544?2400 microsecond range](https://github.com/arduino-libraries/Servo/blob/master/src/Servo.h), mapped linearly to 0?180 degrees. A one-microsecond step is about 0.097 degrees in this model; `Servo.write()` uses whole-degree commands. Custom `attach(pin, min, max)` calibration is not supported by this restricted parser and is rejected rather than silently misinterpreted. Hardware pulse-to-angle calibration and servo response remain outside the model.
+
+The Generated commands selector retains **Whole degrees** for beginner sketches. Existing degree-based code still runs, but its quantized targets can yield visibly coarser foot paths. Refresh the lab and regenerate a sketch to adopt fine pulses; existing editor text is never silently replaced.
+
+Robot code playback linearly interpolates joint samples across their delay intervals, without restarting an ease-in/ease-out curve at each sample. Loop boundaries preserve elapsed time, and integer delays sum to the requested cycle duration exactly. The preview follows the actual parsed commands; it does not substitute the predefined gait or snap drawn feet to the floor. Consequently it remains an approximation to the ideal analytic gait, even at fine resolution. The standalone single-leg lab retains its original educational playback model and supported command subset.
+
+## Scene and joint controls
+
+The single-leg lab shows an open rectangular chassis frame, shaded links, and the same world-coordinate foot path in all views. Pose sliders sit beside the canvas on desktop and directly beneath it on narrow screens. The robot lab also places Test one leg inside the scene workspace so joint changes can be watched without scrolling between sections. The chassis frame is a visual mount reference; it does not change kinematics or enforce collisions.
+
+The site homepage opens the full robot builder and gait simulator. Use its Single-leg lab link to open `single-leg.html`. The previous `robot.html` address redirects to the homepage.

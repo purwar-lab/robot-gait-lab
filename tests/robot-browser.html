@@ -1,0 +1,78 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Robot lab browser checks</title>
+<style>body{font:14px system-ui;margin:16px}iframe{width:100%;height:1200px;border:1px solid #ddd}pre{white-space:pre-wrap}</style>
+<h1>Robot lab browser checks</h1><pre id="results" data-status="running">Running…</pre><iframe id="app" title="Robot lab under test"></iframe>
+<script>
+const results=document.getElementById('results'),frame=document.getElementById('app');
+frame.addEventListener('load',()=>{
+  if(!frame.contentDocument.getElementById('robotScene'))return;
+  const w=frame.contentWindow,d=w.document,$=id=>d.getElementById(id),checks=[],errors=[];
+  w.addEventListener('error',e=>errors.push(e.message));
+  const check=(name,ok)=>{if(!ok)throw Error(name);checks.push('PASS '+name);};
+  const change=(id,value,event='change')=>{$(id).value=value;$(id).dispatchEvent(new w.Event(event,{bubbles:true}));};
+  try{
+    check('initial six-leg assembly',d.querySelectorAll('.mount').length===6);
+    check('initial reachable gait',!$('walk').disabled&&$('motorCount').textContent==='18 servos');
+    change('plateShape','circle');check('circle dimensions shown',$('rectangleSize').hidden&&!$('circleSize').hidden);
+    d.querySelector('[data-leg="3"]').click();check('leg selection',$('selectedLegLabel').textContent==='Leg 3');
+    change('selectedDof','2');check('per-leg 2 DOF',$('jointSide').disabled&&$('motorCount').textContent==='17 servos');
+    change('allDof','2');$('applyDof').click();check('all two-DOF legs',$('motorCount').textContent==='12 servos');
+    const attachment=d.querySelector('[aria-label="Attach leg 2"]');attachment.checked=false;attachment.dispatchEvent(new w.Event('change'));
+    check('detached leg removed from motor count',$('motorCount').textContent==='10 servos');
+    check('odd leg layout switches to wave',$('gaitType').value==='wave');
+    $('presetFour').click();check('quadruped preset',$('legCount').value==='4'&&$('gaitType').value==='trot');
+    change('gaitType','pace');check('pace available',$('gaitType').value==='pace');
+    for(const view of ['top','front','side','iso']){
+      d.querySelector('[data-camera="'+view+'"]').click();check(view+' camera',d.querySelector('[data-camera="'+view+'"]').classList.contains('selected'));
+    }
+    change('cyclePhase','300','input');check('cycle scrub',$('phaseValue').textContent==='30%'&&d.querySelectorAll('.phase-row').length===4);
+    $('walk').click();check('walk begins',!$('pauseMotion').disabled);w.__advance(6000);
+    check('walking advances over multiple cycles',parseFloat($('distanceSummary').textContent)>100);
+    $('pauseMotion').click();check('pause/resume state',$('pauseMotion').textContent==='Resume');
+    $('resetMotion').click();check('motion reset',$('distanceSummary').textContent==='0 units');
+    change('codeScope','all');$('generateGait').click();check('all-leg sketch generated',$('robotCode').value.includes('Servo leg4Knee;'));
+    check('generated gait uses fine pulses',$('robotCode').value.includes('.writeMicroseconds('));
+    change('codePrecision','degrees');$('generateGait').click();$('checkCode').click();check('degree export still validates',$('notice').classList.contains('ok')&&!$('robotCode').value.includes('.writeMicroseconds('));
+    change('codePrecision','pulse');$('generateGait').click();
+    $('checkCode').click();check('all-leg sketch validates',$('notice').classList.contains('ok'));
+    $('runCode').click();check('whole-robot code playback begins',!$('pauseMotion').disabled&&$('sceneMode').textContent.includes('Whole-robot'));
+    w.__advance(5000);check('whole-robot sketch advances from ground contacts',parseFloat($('distanceSummary').textContent)>10&&!$('notice').classList.contains('error'));
+    change('jointHip','70','input');check('manual pose interrupts code',$('pauseMotion').disabled);
+    $('loadExample').click();$('checkCode').click();check('one-leg example validates',$('notice').classList.contains('ok')&&$('codeScope').value==='one');
+    const beforeDistance=$('distanceSummary').textContent;$('runCode').click();w.__advance(3200);check('single-leg sketch holds body position',$('distanceSummary').textContent===beforeDistance);$('pauseMotion').click();
+    const before=$('robotCode').value,position=before.indexOf('  // Lift');
+    $('robotCode').focus();$('robotCode').setSelectionRange(position,position);$('robotCode').dispatchEvent(new w.Event('select'));
+    $('insertPose').focus();$('insertPose').click();check('pose insertion at cursor',$('robotCode').value.slice(position).startsWith('  hip.write('));
+    $('checkCode').click();check('inserted sketch validates',$('notice').classList.contains('ok'));
+    $('robotCode').value='void setup(){} void loop(){for(;;){}}';$('checkCode').click();check('unsupported code rejected',$('notice').classList.contains('error'));
+    change('bodyHeight','205','input');change('lift','45','input');check('unreachable gait cannot walk',$('walk').disabled&&$('reachMessage').textContent.includes('cannot reach'));
+    $('presetSix').click();$('loadExample').click();change('cyclePhase','300','input');
+    check('hexapod reset is reachable',!$('walk').disabled);
+    check('visible stance and swing phases',[...d.querySelectorAll('.phase-state')].some(n=>n.textContent==='swing')&&[...d.querySelectorAll('.phase-state')].some(n=>n.textContent==='stance'));
+    const sceneLayout=d.querySelector('.scene-and-joints');
+    check('joint controls share the scene workspace',sceneLayout.contains($('jointKnee')));
+    frame.style.width='360px';
+    const layoutBox=sceneLayout.getBoundingClientRect();
+    check('mobile canvas and joint sliders fit together within 650 pixels',$('jointKnee').getBoundingClientRect().bottom-layoutBox.top<650);
+
+    check('mobile has no page overflow ('+d.documentElement.scrollWidth+'/'+w.innerWidth+')',d.documentElement.scrollWidth<=w.innerWidth);
+    frame.style.width='100%';check('no browser errors',errors.length===0);
+    results.textContent=checks.join('\n')+'\n'+checks.length+' robot browser checks passed.';results.dataset.status='passed';
+    const params=new URLSearchParams(location.search);
+    if(params.has('codeTrail')){
+      $('presetFour').click();change('codeScope','all');change('codePrecision','pulse');$('generateGait').click();
+      $('footTrails').checked=true;$('footTrails').dispatchEvent(new w.Event('change'));d.querySelector('[data-camera="side"]').click();
+      $('runCode').click();w.__advance(10000);$('pauseMotion').click();
+    }
+    if(params.has('screenshot')){
+      results.hidden=true;document.querySelector('h1').hidden=true;document.body.style.margin='0';frame.style.border='0';
+      frame.style.width=params.has('mobile')?'360px':'100%';frame.style.height='1800px';
+      d.activeElement?.blur();w.scrollTo(0,0);window.scrollTo(0,0);
+    }
+  }catch(e){results.textContent=checks.join('\n')+'\nFAIL '+e.message+'\n'+errors.join('\n');results.dataset.status='failed';}
+});
+fetch('../index.html').then(r=>r.text()).then(html=>{
+  const base=new URL('../',location.href).href;
+  const clock='<script>window.__clock={time:100,callback:null};window.requestAnimationFrame=cb=>{window.__clock.callback=cb;return 1;};window.__advance=ms=>{for(let elapsed=0;elapsed<ms;elapsed+=20){window.__clock.time+=20;const cb=window.__clock.callback;if(cb)cb(window.__clock.time);}};<\/script>';
+  frame.srcdoc=html.replace('<head>','<head><base href="'+base+'">'+clock);
+}).catch(e=>{results.textContent=e.message;results.dataset.status='failed';});
+</script></html>

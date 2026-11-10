@@ -4,13 +4,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'single-leg.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 function harness() {
   const nodes = new Map(), downloads = [];
   let time = 100, clockStarted = false;
-  const context2d = new Proxy({}, { get: (o, k) => o[k] ?? (() => {}), set: (o, k, v) => (o[k] = v, true) });
+  const context2d = new Proxy({createLinearGradient: () => ({addColorStop() {}}), createRadialGradient: () => ({addColorStop() {}})}, { get: (o, k) => o[k] ?? (() => {}), set: (o, k, v) => (o[k] = v, true) });
   function node(id) {
     if (!nodes.has(id)) nodes.set(id, {
       value: '', checked: true, width: id === 'scene' ? 820 : 250, height: id === 'scene' ? 560 : 210,
