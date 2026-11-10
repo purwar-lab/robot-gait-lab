@@ -2,7 +2,7 @@
 <html lang="en"><meta charset="utf-8"><title>Local simulator browser checks</title>
 <style>body{font:14px system-ui;margin:16px}iframe{width:100%;height:1000px;border:1px solid #ddd}pre{white-space:pre-wrap}</style>
 <h1>Simulator browser checks</h1><pre id="results" data-status="running">Running…</pre>
-<iframe id="app" title="Simulator under test" src="../single-leg.html"></iframe>
+<iframe id="app" title="Simulator under test"></iframe>
 <script>
 const results=document.getElementById('results'), frame=document.getElementById('app');
 frame.addEventListener('load',async()=>{
@@ -38,6 +38,10 @@ frame.addEventListener('load',async()=>{
     $('resetCode').click();$('build').click();$('step').click();
     check('step highlights first setup command',d.querySelector('#timeline tr.active')?.dataset.index==='0');
     $('showTrail').checked=false;$('showTrail').dispatchEvent(new w.Event('change'));
+    const solidImage=scene.toDataURL();$('transparentBody').checked=true;$('transparentBody').dispatchEvent(new w.Event('change'));
+    check('body transparency changes the scene',scene.toDataURL()!==solidImage);
+    $('transparentBody').checked=false;$('transparentBody').dispatchEvent(new w.Event('change'));
+    check('yaw mode labels identify the vertical hip axis',$('sideJointLabel').textContent.includes('yaw')&&$('axisModeLabel').textContent.includes('vertical'));
     check('canvas renders',scene.getContext('2d').getImageData(0,0,scene.width,scene.height).data.some((v,i)=>i%4!==3&&v<100));
     const sceneLayout=d.querySelector('.leg-scene-layout');
     check('joint controls share the scene workspace',sceneLayout.contains($('knee')));
@@ -57,4 +61,5 @@ frame.addEventListener('load',async()=>{
     }
   }catch(e){results.textContent=checks.join('\n')+'\nFAIL '+e.message+'\n'+errors.join('\n');results.dataset.status='failed';}
 });
+frame.src='../single-leg.html?test='+Date.now();
 </script></html>

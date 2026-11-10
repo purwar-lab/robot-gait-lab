@@ -99,7 +99,7 @@ Robot code playback linearly interpolates joint samples across their delay inter
 
 ## Scene and joint controls
 
-The single-leg lab shows an open rectangular chassis frame, shaded links, and the same world-coordinate foot path in all views. Pose sliders sit beside the canvas on desktop and directly beneath it on narrow screens. The robot lab also places Test one leg inside the scene workspace so joint changes can be watched without scrolling between sections. The chassis frame is a visual mount reference; it does not change kinematics or enforce collisions.
+The single-leg lab shows a solid rectangular chassis with optional transparency and a +Z forward arrow, shaded links, and the same world-coordinate foot path in all views. Pose sliders sit beside the canvas on desktop and directly beneath it on narrow screens. The robot lab also places Test one leg inside the scene workspace so joint changes can be watched without scrolling between sections. The chassis frame is a visual mount reference; it does not change kinematics or enforce collisions.
 
 The site homepage opens the full robot builder and gait simulator. Use its Single-leg lab link to open `single-leg.html`. The previous `robot.html` address redirects to the homepage.
 
@@ -115,3 +115,5 @@ Joint axes can be toggled in the single-leg camera toolbar. Gold marks the later
 6. With the real robot supported and motion paused, use Compare a measured foot position. Enter measured X/Y/Z relative to the hip in the same units as the simulated geometry. Capture paired samples and download CSV coordinates and position errors for a lab report. Samples remain in memory until reload.
 
 The standalone single-leg lab remains the original 140-unit educational model; editable robot dimensions and physical calibration belong to the robot builder. No hardware is controlled directly by the browser. Run `node tests/robot-design.test.cjs` for dimension, calibration and hardware-export regressions.
+
+Hip flexion is rotation about the lateral-rotated sideways axis. The separate proximal hip joint is abduction about world Z by default, or yaw about vertical Y in the single-leg yaw option. Hip swing is ambiguous terminology: a vertical-axis sweep is yaw, whereas forward/back leg flexion uses a sideways axis. The gait lab currently uses the abduction/flexion/knee model, not a coxa-yaw/femur/knee mechanism. The single-leg yaw option models intersecting hip axes with no separate coxa-link offset.

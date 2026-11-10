@@ -50,6 +50,7 @@ main{grid-template-columns:minmax(0,1fr)}
         <button type="button" class="view-btn" data-view="yz">YZ · side</button>
         <button type="button" id="resetCamera">Reset camera</button>
         <label><input id="jointAxes" type="checkbox" checked> Joint axes</label>
+        <label><input id="transparentBody" type="checkbox"> Transparent body</label>
         <span class="view-state" id="cameraState">Zoom 100%</span>
       </div>
       <div class="view-help"><strong>Orbit:</strong> left-drag · <strong>Pan:</strong> Shift+drag or right-drag · <strong>Zoom:</strong> scroll wheel · <strong>Touch:</strong> one finger orbit, two fingers pan/pinch · Double-click resets camera.</div>
@@ -72,7 +73,7 @@ main{grid-template-columns:minmax(0,1fr)}
         <input id="hipPitch" type="range" min="0" max="180" value="90" step="1" />
       </div>
       <div class="slider-row">
-        <div class="slider-label"><label for="hipSide">Hip lateral servo · A2</label><span class="v" id="hipSideVal">90°</span></div>
+        <div class="slider-label"><label id="sideJointLabel" for="hipSide">Hip lateral servo · A2</label><span class="v" id="hipSideVal">90°</span></div>
         <input id="hipSide" type="range" min="0" max="180" value="90" step="1" />
       </div>
       <div class="slider-row">
@@ -86,7 +87,7 @@ main{grid-template-columns:minmax(0,1fr)}
       </div>
 
 </div></div>
-    <div class="view-help" style="padding:8px 16px">Rotation axes: <span style="color:#d18a19">gold: lateral hip</span> &middot; <span style="color:#087f8c">teal: hip flexion</span> &middot; <span style="color:#8556b3">purple: knee</span>. Dashed guides pass through each joint; flexion and knee axes turn with the lateral hip.</div>
+    <div class="view-help" style="padding:8px 16px">Rotation axes: <span style="color:#d18a19"><span id="axisModeLabel">gold: lateral hip</span></span> &middot; <span style="color:#087f8c">teal: hip flexion</span> &middot; <span style="color:#8556b3">purple: knee</span>. Dashed guides pass through each joint; flexion and knee axes turn with the proximal hip. Body arrow: forward (+Z).</div>
     <div class="subviews">
       <div class="subview"><div class="label">XY plane · front view</div><canvas id="xyView" width="250" height="210" aria-label="XY projection, x right and y down"></canvas></div>
       <div class="subview"><div class="label">XZ plane · top view</div><canvas id="xzView" width="250" height="210" aria-label="XZ projection, x right and z up"></canvas></div>
@@ -254,6 +255,8 @@ document.querySelectorAll('.view-btn').forEach(b=>b.addEventListener('click',()=
 
 function updateModeHelp(){
   const mode=$('mode3').value;
+  $('sideJointLabel').textContent=(mode==='yaw'?'Hip yaw / horizontal swing':'Hip lateral / abduction')+' servo - A2';
+  $('axisModeLabel').textContent=mode==='yaw'?'gold: vertical hip yaw (Y)':'gold: lateral hip (Z)';
   if(mode==='abduction'){
     $('modeHelp').innerHTML='<strong>Abduction/adduction:</strong> the lateral joint rotates about world <strong>Z</strong> (forward). Hip flexion and knee bend about the rotated local X axis. Above 90°, the lateral servo moves a hanging leg toward +X; hip flexion above 90° and knee below 90° bend toward +Z when lateral is neutral.';
     $('projectionExplain').innerHTML='<strong>Try one joint at a time:</strong> hold hip flexion and knee fixed, then move the lateral slider. The foot traces an XY arc with constant Z, so its XZ projection is a straight segment. Combined joint motion can produce other shapes.';
@@ -311,25 +314,34 @@ function drawJointAxes(){
   }
   ctx.restore();
 }
-$('jointAxes').onchange=drawAll;
+$('jointAxes').onchange=drawAll;$('transparentBody').onchange=drawAll;
 function drawMainScene(){
   const {hipPt,kneePt,footPt} = computeLeg(pose);
   ctx.clearRect(0,0,canvas.width,canvas.height); const sky=ctx.createLinearGradient(0,0,0,canvas.height);sky.addColorStop(0,'#f8fbfd');sky.addColorStop(1,'#edf5f8');ctx.fillStyle=sky; ctx.fillRect(0,0,canvas.width,canvas.height); drawGrid3D();
   ctx.fillStyle='#688198'; ctx.font='12px system-ui'; ctx.fillText('X sideways · Y down · Z forward',16,25);
   const H=project3D(hipPt), K=project3D(kneePt), F=project3D(footPt);
   if($('showTrail').checked && trail.length>1){ ctx.beginPath(); ctx.strokeStyle='#efb98b'; ctx.lineWidth=2.2; trail.forEach((pt,i)=>{ const p=project3D(pt); if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);}); ctx.stroke(); }
-  // Open rectangular chassis, with the hip mounted at the middle of its side.
+  // Solid rectangular chassis; the hip is mounted on the side at the origin.
   const parts=[];
   const depth=p=>p[1]*Math.sin(camera.pitch)+(-p[0]*Math.sin(camera.yaw)+p[2]*Math.cos(camera.yaw))*Math.cos(camera.pitch);
-  function rod(a,b,color,width){parts.push({depth:(depth(a)+depth(b))/2,draw(){const A=project3D(a),B=project3D(b);ctx.lineCap='round';ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();const length=Math.hypot(B.x-A.x,B.y-A.y)||1,dx=-(B.y-A.y)/length*width/2,dy=(B.x-A.x)/length*width/2;const shade=ctx.createLinearGradient(A.x-dx,A.y-dy,A.x+dx,A.y+dy);shade.addColorStop(0,color);shade.addColorStop(.35,'#ffffff55');shade.addColorStop(1,color);ctx.strokeStyle=shade;ctx.lineWidth=width-2;ctx.stroke();}});}
-  const corners=[[-220,-12,-95],[0,-12,-95],[0,-12,95],[-220,-12,95]];
-  for(let i=0;i<4;i++){rod(corners[i],corners[(i+1)%4],'#7898aa',10);}
-  rod([0,-12,0],hipPt,'#7898aa',12);
+  function rodSegment(a,b,color,width){parts.push({depth:(depth(a)+depth(b))/2,draw(){const A=project3D(a),B=project3D(b);ctx.lineCap='butt';ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();const length=Math.hypot(B.x-A.x,B.y-A.y)||1,dx=-(B.y-A.y)/length*width/2,dy=(B.x-A.x)/length*width/2;const shade=ctx.createLinearGradient(A.x-dx,A.y-dy,A.x+dx,A.y+dy);shade.addColorStop(0,color);shade.addColorStop(.35,'#ffffff55');shade.addColorStop(1,color);ctx.strokeStyle=shade;ctx.lineWidth=width-2;ctx.stroke();}});}
+  function rod(a,b,color,width){for(let i=0;i<16;i++)rodSegment(a.map((v,j)=>v+(b[j]-v)*i/16),a.map((v,j)=>v+(b[j]-v)*(i+1)/16),color,width);}
+  const top=[[-220,-48,-95],[0,-48,-95],[0,-48,95],[-220,-48,95]],bottom=top.map(p=>[p[0],8,p[2]]);
+  function bodyFace(points,color,arrow=false){parts.push({depth:points.reduce((sum,p)=>sum+depth(p),0)/points.length,draw(){
+    ctx.save();ctx.globalAlpha=$('transparentBody').checked?.45:1;ctx.beginPath();points.forEach((p,i)=>{const q=project3D(p);if(i)ctx.lineTo(q.x,q.y);else ctx.moveTo(q.x,q.y);});ctx.closePath();ctx.fillStyle=color;ctx.strokeStyle='#64899c';ctx.lineWidth=1;ctx.fill();ctx.stroke();ctx.restore();
+    if(arrow){
+      const a=project3D([-110,-49,-55]),b=project3D([-110,-49,48]);ctx.strokeStyle='#416a80';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      const tip=[[-110,-49,70],[-124,-49,43],[-96,-49,43]].map(project3D);ctx.fillStyle='#416a80';ctx.beginPath();tip.forEach((p,i)=>{if(i)ctx.lineTo(p.x,p.y);else ctx.moveTo(p.x,p.y);});ctx.closePath();ctx.fill();
+    }
+  }});}
+  bodyFace(bottom,'#789bab');
+  for(let i=0;i<4;i++){const j=(i+1)%4;bodyFace([top[i],top[j],bottom[j],bottom[i]],i%2?'#85a9bd':'#9ebdce');}
+  bodyFace(top,'#c9dee8',true);
   rod(hipPt,kneePt,'#277d87',18);rod(kneePt,footPt,'#765699',16);
   for(const [point,color,radius] of [[hipPt,'#8baebb',13],[kneePt,'#8baebb',11],[footPt,'#ef8b35',8]]){
-    parts.push({depth:depth(point),draw(){const p=project3D(point);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);const shade=ctx.createRadialGradient(p.x-radius*.3,p.y-radius*.35,1,p.x,p.y,radius);shade.addColorStop(0,'#e7f0f2');shade.addColorStop(.45,color);shade.addColorStop(1,'#426475');ctx.fillStyle=shade;ctx.fill();ctx.strokeStyle='#ffffffb0';ctx.lineWidth=2;ctx.stroke();ctx.beginPath();ctx.arc(p.x-radius*.25,p.y-radius*.25,radius*.4,0,Math.PI*2);ctx.fillStyle='#ffffff40';ctx.fill();}});
+    parts.push({depth:depth(point)-radius/(Math.min(canvas.width-80,canvas.height-100)/(2*REACH)*camera.zoom),draw(){const p=project3D(point);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);const shade=ctx.createRadialGradient(p.x-radius*.3,p.y-radius*.35,1,p.x,p.y,radius);shade.addColorStop(0,'#e7f0f2');shade.addColorStop(.45,color);shade.addColorStop(1,'#426475');ctx.fillStyle=shade;ctx.fill();ctx.strokeStyle='#ffffffb0';ctx.lineWidth=2;ctx.stroke();ctx.beginPath();ctx.arc(p.x-radius*.25,p.y-radius*.25,radius*.4,0,Math.PI*2);ctx.fillStyle='#ffffff40';ctx.fill();}});
   }
-  parts.sort((a,b)=>a.depth-b.depth).forEach(part=>part.draw());
+  parts.sort((a,b)=>b.depth-a.depth).forEach(part=>part.draw());
   drawJointAxes();
   drawJointLabels(H,K,F);
   drawAxes3D();
@@ -342,7 +354,7 @@ function drawMainScene(){
   ctx.font = '700 12px system-ui'; ctx.fillStyle = '#29465f'; ctx.fillText('Current angles', bx+12, by+18);
   ctx.font = '12px system-ui';
   ctx.fillStyle = '#0b7d87'; ctx.fillText(`Hip: ${Math.round(pose.hip)}°`, bx+12, by+36);
-  ctx.fillStyle = '#2f7d58'; ctx.fillText(`Hip lateral: ${Math.round(pose.hipSide)}°`, bx+12, by+52);
+  ctx.fillStyle = '#2f7d58'; ctx.fillText(`${$('mode3').value==='yaw'?'Hip yaw':'Hip lateral'}: ${Math.round(pose.hipSide)}°`, bx+12, by+52);
   ctx.fillStyle = '#7156a5'; ctx.fillText(`Knee: ${Math.round(pose.knee)}°`, bx+12, by+68);
 }
 
