@@ -27,7 +27,8 @@
         <label class="field" for="plateLength">Length<input id="plateLength" type="number" min="180" max="380" step="10" value="270"></label>
       </div>
       <label id="circleSize" class="field" for="plateRadius" hidden>Radius<input id="plateRadius" type="number" min="100" max="200" step="5" value="145"></label>
-      <label class="slider-field" for="bodyHeight"><span>Body height <output id="heightValue">225</output></span><input id="bodyHeight" type="range" min="205" max="250" step="1" value="225"></label>
+      <div class="two-fields"><label class="field" for="thighLength">Thigh length<input id="thighLength" type="number" min="50" max="250" value="140"></label><label class="field" for="shinLength">Shin length<input id="shinLength" type="number" min="50" max="250" value="140"></label></div>
+      <label class="slider-field" for="bodyHeight"><span>Body height <output id="heightValue">225</output></span><input id="bodyHeight" type="range" min="60" max="450" step="1" value="225"></label>
       <div class="mini-heading"><h3>Attach & select legs</h3><span id="motorCount">18 servos</span></div>
       <div id="mountList" class="mount-list" aria-label="Leg mounts"></div>
       <p class="hint">Select a leg here or click its hip in the scene. Uncheck a mount to detach it.</p>
@@ -53,6 +54,13 @@
       <label class="slider-field" for="jointSide"><span>Lateral hip <output id="jointSideValue">90°</output></span><input id="jointSide" type="range" min="0" max="180" step="1" value="90"></label>
       <label class="slider-field" for="jointKnee"><span>Knee <output id="jointKneeValue">90°</output></span><input id="jointKnee" type="range" min="0" max="180" step="1" value="90"></label>
       <p id="jointHint" class="hint"></p>
+      <details class="target-controls"><summary>Foot-target mode</summary>
+        <label class="field" for="targetPlane">Drag plane<select id="targetPlane"><option value="xy">XY / front</option><option value="xz">XZ / top</option><option value="yz">YZ / side</option></select></label>
+        <p class="hint">Hip-relative: X sideways, Y down, Z forward. Drag the ring; the third coordinate stays fixed.</p>
+        <div class="target-fields"><label>X<input id="targetX" type="number" step="1"></label><label>Y<input id="targetY" type="number" step="1"></label><label>Z<input id="targetZ" type="number" step="1"></label></div>
+        <button id="enableTarget">Target current foot</button><button id="applyTarget">Move to target</button>
+        <p id="targetStatus" role="status" class="hint">Select Target current foot to start.</p>
+      </details>
       <div class="button-row"><button id="restLeg">Standing pose</button><button id="insertPose">Insert pose + delay</button></div>
     </section>
 </div>
@@ -82,6 +90,15 @@
     </section>
   </section>
 
+  <section class="card hardware-panel">
+    <div class="section-heading"><h2>Calibrate the selected leg</h2><span id="calibrationLeg"></span></div>
+    <p class="hint">Model angles stay in the simulator. Physical command = neutral + direction &times; (model angle &minus; 90&deg;). Limits are physical servo commands, not measured joint angles. Pin numbers use Arduino digital numbering; match them to your board.</p>
+    <details><summary>Selected leg mounting position</summary><p class="hint">Body-relative X and Z; hip height stays at the body mounting plane. Custom mounts are preserved when body dimensions change.</p><div class="button-row"><label>X <input id="mountX" type="number" min="-400" max="400"></label><label>Z <input id="mountZ" type="number" min="-400" max="400"></label><button id="applyMount">Apply mount</button><button id="resetMount">Use automatic mount</button></div></details>
+    <div class="calibration-scroll"><table class="calibration-table"><thead><tr><th>Joint</th><th>Pin</th><th>Neutral (&deg;)</th><th>Direction</th><th>Min (&deg;)</th><th>Max (&deg;)</th><th>Model &rarr; physical</th></tr></thead><tbody id="calibrationRows"></tbody></table></div>
+    <div class="button-row"><button id="applyCalibration">Apply calibration</button><button id="saveDesign">Save design + calibration</button><label class="import-label">Load design<input id="loadDesign" type="file" accept="application/json,.json"></label></div>
+    <details><summary>Compare a measured foot position</summary><p class="hint">With the real robot held still, measure the selected foot relative to its hip: X sideways, Y down, Z forward. Use the same units as your link dimensions. Capture pairs of measured and simulated positions for your report.</p><div class="button-row"><label>X <input id="measuredX" type="number" step="0.1"></label><label>Y <input id="measuredY" type="number" step="0.1"></label><label>Z <input id="measuredZ" type="number" step="0.1"></label><button id="captureMeasurement">Capture comparison</button><button id="downloadMeasurements" disabled>Download comparisons CSV</button></div><p id="measurementStatus" role="status" class="hint">No measurements recorded.</p></details>
+    <p id="calibrationStatus" role="status" class="hint">Default pins are placeholders. Calibrate with the robot supported before walking.</p>
+  </section>
   <section class="bench-grid">
 <section class="card learning-panel">      <div class="teaching-note"><strong>What makes walking possible?</strong><p>During stance, a foot stays planted while the body moves forward. During swing, it lifts and reaches for the next step. The shaded ground polygon connects the planted feet; the center dot is the body center projected onto the ground.</p></div>
       <p class="hint">The support area is a geometric teaching aid. This model does not simulate gravity, tipping, friction, torque, or dynamic balance. Units are illustrative.</p>
@@ -96,7 +113,7 @@
       </div>
       <p id="codeScopeHelp" class="hint">Use hip, hipSide, and knee for the selected leg.</p>
       <textarea id="robotCode" spellcheck="false" aria-label="Robot Arduino sketch"></textarea>
-      <div class="code-actions"><button id="checkCode">Check sketch</button><button id="runCode" class="primary">▶ Run sketch</button><button id="downloadCode">Download .ino</button><label><input id="repeatCode" type="checkbox" checked> Repeat loop</label></div>
+      <div class="code-actions"><button id="checkCode">Check sketch</button><button id="runCode" class="primary">▶ Run sketch</button><button id="downloadCode">Download model .ino</button><button id="downloadHardware">Download calibrated .ino</button><label><input id="repeatCode" type="checkbox" checked> Repeat loop</label></div>
       <div id="notice" class="notice" role="status" aria-live="polite">Start with one leg, then generate a coordinated sketch for the whole robot.</div>
       <p id="codeLine" class="code-line">No sketch running</p>
       <details><summary>Supported code & motion model</summary><p>Servo declarations, attach(), write(), writeMicroseconds(), delay(), initialized variables, assignments, and arithmetic. Setup runs once; loop repeats with persistent globals. Control flow and custom functions are not supported.</p><p>One-leg sketches hold the chassis still. Code playback interpolates continuously between samples. Whole-robot sketches estimate travel from the motion of retained ground contacts; the slip readout shows disagreement between feet. Generated gait previews use exact planted-foot trajectories. Arbitrary code may lift every foot or penetrate the ground; the model shows this rather than inventing balance.</p><p>Generate gait sketch defaults to finer writeMicroseconds() commands using the Servo library?s default 544?2400 us angle mapping. Whole-degree write() commands remain available, but their foot paths are less precise. This is a preview interpolation, not a physical servo response model.</p><p>Exported pins are placeholders. Match pins, servo orientation, neutral offsets, and travel limits to the actual hardware.</p></details>
@@ -104,6 +121,6 @@
   </section>
 </main>
 <footer>Robot Gait Lab · A design and coordination playground. <a href="single-leg.html">Return to the single-leg simulator</a>.</footer>
-<script src="robot-core.js"></script><script src="robot-arduino.js"></script><script src="robot-motion.js"></script><script src="robot-app.js"></script>
+<script src="robot-core.js"></script><script src="robot-arduino.js"></script><script src="robot-motion.js"></script><script src="robot-hardware.js"></script><script src="robot-app.js"></script>
 </body>
 </html>

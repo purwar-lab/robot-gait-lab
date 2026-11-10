@@ -1,6 +1,9 @@
 /* Robot Gait Lab browser controller and Canvas 3D renderer. */
 (() => {
 'use strict';
+const H=RobotHardware;
+let calibration={},targetPoint=null,targetDrag=null;
+const measurements=[];
 const C=RobotCore, $=id=>document.getElementById(id);
 let config=C.defaults(), legs=C.mounts(config), selected=1, mode='gait', running=false, time=0;
 let frame=C.gaitFrame(config,legs,0), poses=new Map(frame.legs.map(f=>[f.leg.id,{...f.pose}]));
@@ -25,7 +28,7 @@ function fromFlat(values){
 }
 function stopMotion(){running=false;lastTime=0;$('pauseMotion').disabled=true;$('pauseMotion').textContent='Pause';}
 function resetMotion(){
-  stopMotion();time=0;runner=null;checked=null;anchors.clear();trails.clear();mode='gait';reachError=C.validate(config,legs);
+  targetPoint=null;stopMotion();time=0;runner=null;checked=null;anchors.clear();trails.clear();mode='gait';reachError=C.validate(config,legs);
   frame=C.gaitFrame(config,legs,0,$('moveBody').checked);body=[...frame.body];
   poses=new Map(frame.legs.map(f=>[f.leg.id,{...f.pose}]));
   $('codeLine').textContent='No sketch running';sync();render();
@@ -33,7 +36,7 @@ function resetMotion(){
 function rebuildMounts(){
   legs=C.mounts(config,legs);
   if(!active().some(l=>l.id===selected))selected=active()[0]?.id??legs[0].id;
-  refreshGaits();renderMounts();resetMotion();scopeHelp();
+  refreshGaits();renderMounts();resetMotion();scopeHelp();renderCalibration();
   notice('Design updated. Existing sketch text is preserved; check its servo names before running.');
 }
 function refreshGaits(){
@@ -49,7 +52,7 @@ function renderMounts(){
     check.addEventListener('change',()=>{
       leg.enabled=check.checked;
       if(!active().some(l=>l.id===selected))selected=active()[0]?.id??leg.id;
-      refreshGaits();renderMounts();resetMotion();scopeHelp();notice('Leg attachment changed. Recheck the sketch for this design.');
+      refreshGaits();renderMounts();resetMotion();scopeHelp();renderCalibration();notice('Leg attachment changed. Recheck the sketch for this design.');
     });
     const button=document.createElement('button');button.type='button';button.dataset.leg=String(leg.id);
     button.innerHTML='Leg '+leg.id+'<small>'+leg.dof+' DOF · '+(leg.enabled?'attached':'empty')+'</small>';
@@ -58,11 +61,12 @@ function renderMounts(){
 }
 function selectLeg(id){
   if(mode==='code'&&$('codeScope').value==='one')stopMotion();
-  selected=id;checked=null;renderMounts();scopeHelp();syncJoints();render();
+  targetPoint=null;selected=id;checked=null;renderMounts();scopeHelp();renderCalibration();syncJoints();render();
 }
 function syncJoints(){
   const leg=selectedLeg();if(!leg)return;
   const p=poses.get(leg.id)||C.restPose(config,leg);
+  for(const key of C.jointKeys(leg)){const out=$("physical-"+key);if(out){const c=H.entry(calibration,leg.id,key),v=H.physical(p[key],c);out.textContent=p[key].toFixed(1)+" -> "+v.toFixed(1)+" deg";out.style.color=v<c.min||v>c.max?"#b43d2e":"";}}
   $('selectedLegLabel').textContent='Leg '+leg.id+(leg.enabled?'':' · detached');
   $('selectedDof').value=String(leg.dof);
   for(const [id,key] of [['jointHip','hip'],['jointSide','hipSide'],['jointKnee','knee']]){
@@ -104,15 +108,17 @@ function sync(){
   const phase=Math.round(C.mod(time/config.period)*1000);$('cyclePhase').value=phase;$('phaseValue').textContent=Math.round(phase/10)+'%';
   const error=reachError;$('walk').disabled=!!error;
   const penetration=frame.legs.some(f=>f.foot[1]>6);
-  $('reachMessage').textContent=error||(penetration?'A foot is below ground. Adjust the pose; collisions are not enforced.':
+  const calibrationWarning=frame.legs.map(f=>H.poseError(f.pose,f.leg,calibration)).find(Boolean);
+  $('reachMessage').textContent=error||(calibrationWarning?'Model preview exceeds physical limits: '+calibrationWarning:penetration?'A foot is below ground. Adjust the pose; collisions are not enforced.':
     mode==='code'&&$('codeScope').value==='all'?'Contact estimate · maximum horizontal slip '+(frame.slip||0).toFixed(1)+' units':
     mode==='gait'&&!$('moveBody').checked?'Chassis held: stance feet slide over the ground. Enable travel to keep them planted.':
     attached.length<3?'This layout needs dynamic balance, which is not simulated.':'Green = stance. Orange = swing. The shaded area shows geometric support.');
+  if(!targetPoint)$('targetStatus').textContent='Target inactive. Select Target current foot to start.';
   updatePhaseTracks();syncJoints();
 }
 function poseFrame(estimate=false){
   const make=()=>active().map(leg=>{
-    const p=poses.get(leg.id)||C.restPose(config,leg),local=C.fk(p),hip=C.add(body,[leg.x,0,leg.z]);
+    const p=poses.get(leg.id)||C.restPose(config,leg),local=C.fk(p,config),hip=C.add(body,[leg.x,0,leg.z]);
     const foot=C.add(hip,local.foot);
     return {leg,pose:p,hip,knee:C.add(hip,local.knee),foot,stance:Math.abs(foot[1])<6,reachable:true,phase:0,duty:0.64};
   });
@@ -134,8 +140,72 @@ function recordTrails(){
   }
 }
 function manualJoint(key,value){
-  stopMotion();mode='pose';runner=null;const leg=selectedLeg();if(!leg.enabled)return;
+  targetPoint=null;stopMotion();mode='pose';runner=null;const leg=selectedLeg();if(!leg.enabled)return;
   poses.set(leg.id,{...poses.get(leg.id),[key]:value});frame=poseFrame();recordTrails();sync();render();
+}
+function renderCalibration(){
+  const leg=selectedLeg();$('calibrationLeg').textContent='Leg '+leg.id;
+  $('mountX').value=leg.x.toFixed(1);$('mountZ').value=leg.z.toFixed(1);
+  $('calibrationRows').replaceChildren(...C.jointKeys(leg).map(key=>{
+    const c=H.entry(calibration,leg.id,key),row=document.createElement('tr');row.dataset.joint=key;
+    row.innerHTML='<th>'+({hip:'Hip flexion',hipSide:'Lateral hip',knee:'Knee'}[key])+'</th>'+['pin','neutral','direction','min','max'].map(field=>'<td>'+(field==='direction'?'<select aria-label="'+key+' direction" data-field="direction"><option value="1">+1</option><option value="-1">-1 / reverse</option></select>':'<input aria-label="'+key+' '+field+'" data-field="'+field+'" type="number" step="'+(field==='pin'?'1':'0.1')+'">')+'</td>').join('')+'<td id="physical-'+key+'"></td>';
+    for(const input of row.querySelectorAll('[data-field]'))input.value=c[input.dataset.field];return row;
+  }));
+}
+$('applyMount').onclick=()=>{const x=Number($('mountX').value),z=Number($('mountZ').value);if(!$('mountX').value.trim()||!$('mountZ').value.trim()||!Number.isFinite(x)||!Number.isFinite(z)||Math.abs(x)>400||Math.abs(z)>400){$('calibrationStatus').textContent='Mount coordinates must be between -400 and 400.';return;}Object.assign(selectedLeg(),{x,z,customMount:true});rebuildMounts();$('calibrationStatus').textContent='Custom mount applied to leg '+selected+'.';};
+$('resetMount').onclick=()=>{selectedLeg().customMount=false;rebuildMounts();$('calibrationStatus').textContent='Automatic mount restored.';};
+$('captureMeasurement').onclick=()=>{
+  const ids=['measuredX','measuredY','measuredZ'],measured=ids.map(id=>Number($(id).value));
+  if(ids.some(id=>!$(id).value.trim())||!measured.every(Number.isFinite)){$('measurementStatus').textContent='Enter all three measured coordinates.';return;}
+  if(running){$('measurementStatus').textContent='Pause motion before capturing a measurement.';return;}
+  const leg=selectedLeg(),p=poses.get(leg.id);if(!leg.enabled||!p){$('measurementStatus').textContent='Select an attached leg.';return;}
+  const simulated=C.fk(p,config).foot,error=Math.hypot(...C.subtract(measured,simulated));
+  measurements.push([leg.id,config.thigh,config.shin,p.hip,p.hipSide,p.knee,...simulated,...measured,error]);
+  $('measurementStatus').textContent='Sample '+measurements.length+': position error '+error.toFixed(2)+' units. Simulated ['+simulated.map(v=>v.toFixed(1)).join(', ')+'].';
+  $('downloadMeasurements').disabled=false;
+};
+$('downloadMeasurements').onclick=()=>downloadText('leg,thigh,shin,model_hip,model_side,model_knee,sim_x,sim_y,sim_z,measured_x,measured_y,measured_z,error\n'+measurements.map(row=>row.join(',')).join('\n')+'\n','Robot_Foot_Comparisons.csv','text/csv');
+$('applyCalibration').onclick=()=>{
+  try{const next={...calibration};for(const row of $('calibrationRows').children){const c={};for(const input of row.querySelectorAll('[data-field]')){if(input.value.trim()==='')throw Error('Complete every calibration field.');c[input.dataset.field]=Number(input.value);}next[selected+'.'+row.dataset.joint]=H.validate(c);}
+    calibration=next;stopMotion();checked=null;syncJoints();render();$('calibrationStatus').textContent='Calibration applied to leg '+selected+'. Model angles are unchanged; calibrated export uses these settings.';
+  }catch(e){$('calibrationStatus').textContent=e.message;}
+};
+function downloadText(text,name,type='text/plain'){const url=URL.createObjectURL(new Blob([text],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);}
+$('saveDesign').onclick=()=>downloadText(JSON.stringify({version:1,config,legs:legs.map(l=>({dof:l.dof,enabled:l.enabled,customMount:l.customMount,x:l.x,z:l.z})),calibration,bodyStyle:$('bodyStyle').value},null,2),'Robot_Gait_Lab_Design.json','application/json');
+$('loadDesign').onchange=async()=>{
+  try{const file=$('loadDesign').files[0];if(!file)return;if(file.size>100000)throw Error('Design file is too large.');const data=JSON.parse(await file.text());
+    if(data.version!==1||!data.config||!Array.isArray(data.legs)||!data.calibration)throw Error('Choose a Robot Gait Lab design file.');
+    const c=data.config;for(const [key,min,max] of [['thigh',50,250],['shin',50,250],['width',150,320],['length',180,380],['radius',100,200],['height',60,450],['stride',20,100],['lift',5,45],['period',1,5],['count',2,8]])if(!Number.isFinite(c[key])||c[key]<min||c[key]>max)throw Error('Invalid design '+key+'.');
+    if(!Number.isInteger(c.count)||!['circle','rectangle'].includes(c.shape)||data.legs.length!==c.count||data.legs.some(l=>![2,3].includes(l.dof)||typeof l.enabled!=='boolean'))throw Error('Invalid leg layout.');
+    if(data.legs.some(l=>l.customMount&&(!Number.isFinite(l.x)||!Number.isFinite(l.z)||Math.abs(l.x)>400||Math.abs(l.z)>400)))throw Error('Invalid custom mount.');
+    for(const [key,value] of Object.entries(data.calibration)){if(!/^[1-8]\.(hip|hipSide|knee)$/.test(key))throw Error('Invalid calibration joint.');H.validate(value);}
+    config={...C.defaults(),...c};calibration=data.calibration;legs=C.mounts(config,data.legs);selected=1;
+    for(const [id,key] of [['thighLength','thigh'],['shinLength','shin'],['plateShape','shape'],['legCount','count'],['plateWidth','width'],['plateLength','length'],['plateRadius','radius'],['bodyHeight','height'],['stride','stride'],['lift','lift'],['period','period']])$(id).value=config[key];
+    $('bodyStyle').value=data.bodyStyle==='box'?'box':'plate';$('rectangleSize').hidden=c.shape!=='rectangle';$('circleSize').hidden=c.shape!=='circle';rebuildMounts();$('calibrationStatus').textContent='Design and calibration loaded. Existing sketch text is preserved.';
+  }catch(e){$('calibrationStatus').textContent='Could not load design: '+e.message;}finally{$('loadDesign').value='';}
+};
+function targetInputs(){return ['targetX','targetY','targetZ'].map(id=>{if($(id).value.trim()==='')return NaN;return Number($(id).value);});}
+function solveTarget(point){
+  stopMotion();runner=null;mode='pose';const leg=selectedLeg();if(!leg.enabled){$('targetStatus').textContent='Attach this leg first.';return;}
+  if(!point.every(Number.isFinite)){ $('targetStatus').textContent='Enter three finite coordinates.';return; }
+  targetPoint=point.map(v=>C.clamp(v,-1000,1000));
+  const solved=C.ik(targetPoint,leg,config),limit=H.poseError(solved.pose,leg,calibration);
+  if(solved.reachable&&!limit){poses.set(leg.id,solved.pose);frame=poseFrame();recordTrails();$('targetStatus').textContent='Reachable. Foot error '+solved.error.toFixed(3)+' units.';}
+  else $('targetStatus').textContent=limit||'Unreachable for this leg: '+solved.error.toFixed(1)+' units from the constrained solution. Last valid pose retained.';
+  ['targetX','targetY','targetZ'].forEach((id,i)=>$(id).value=targetPoint[i].toFixed(1));sync();render();
+}
+$('enableTarget').onclick=()=>{const f=frame.legs.find(f=>f.leg.id===selected);if(!f)return;solveTarget(C.subtract(f.foot,f.hip));view({xy:'front',xz:'top',yz:'side'}[$('targetPlane').value]);};
+$('applyTarget').onclick=()=>solveTarget(targetInputs());
+$('targetPlane').onchange=()=>{if(targetPoint)view({xy:'front',xz:'top',yz:'side'}[$('targetPlane').value]);};
+function dragTarget(p){
+  const leg=selectedLeg(),origin=C.add(body,[leg.x,0,leg.z]),axes={xy:[0,1],xz:[0,2],yz:[2,1]}[$('targetPlane').value],guess=[...targetPoint];
+  for(let i=0;i<8;i++){
+    const world=C.add(origin,guess),q=project(world),a=[...world],b=[...world];a[axes[0]]+=1;b[axes[1]]+=1;const A=project(a),B=project(b),ax=A.x-q.x,ay=A.y-q.y,bx=B.x-q.x,by=B.y-q.y,det=ax*by-ay*bx;
+    if(Math.abs(det)<1e-6){$('targetStatus').textContent='View is edge-on to the drag plane. Select the plane again to align the camera.';return;}
+    const dx=p.x-q.x,dy=p.y-q.y;guess[axes[0]]+=(dx*by-dy*bx)/det;guess[axes[1]]+=(dy*ax-dx*ay)/det;
+    if(Math.hypot(dx,dy)<0.1)break;
+  }
+  solveTarget(guess);
 }
 function configure(id,key,event='input'){
   $(id).addEventListener(event,()=>{
@@ -145,6 +215,7 @@ function configure(id,key,event='input'){
   });
 }
 configure('plateWidth','width','change');configure('plateLength','length','change');configure('plateRadius','radius','change');
+configure('thighLength','thigh','change');configure('shinLength','shin','change');
 configure('bodyHeight','height');configure('stride','stride');configure('lift','lift');configure('period','period');
 $('plateShape').onchange=()=>{config.shape=$('plateShape').value;$('rectangleSize').hidden=config.shape!=='rectangle';$('circleSize').hidden=config.shape!=='circle';rebuildMounts();};
 $('legCount').onchange=()=>{config.count=Number($('legCount').value);rebuildMounts();};
@@ -153,25 +224,25 @@ $('selectedDof').onchange=()=>{selectedLeg().dof=Number($('selectedDof').value);
 function preset(count){
   config={...C.defaults(),count,shape:count===6?'circle':'rectangle',gait:count===6?'tripod':'trot'};
   legs=C.mounts(config);selected=1;
-  for(const [id,key] of [['plateShape','shape'],['legCount','count'],['plateWidth','width'],['plateLength','length'],['plateRadius','radius'],['bodyHeight','height'],['stride','stride'],['lift','lift'],['period','period']])$(id).value=config[key];
+  for(const [id,key] of [['thighLength','thigh'],['shinLength','shin'],['plateShape','shape'],['legCount','count'],['plateWidth','width'],['plateLength','length'],['plateRadius','radius'],['bodyHeight','height'],['stride','stride'],['lift','lift'],['period','period']])$(id).value=config[key];
   $('allDof').value='3';$('rectangleSize').hidden=config.shape!=='rectangle';$('circleSize').hidden=config.shape!=='circle';rebuildMounts();
 }
 $('presetSix').onclick=()=>preset(6);$('presetFour').onclick=()=>preset(4);
 $('gaitType').onchange=()=>{config.gait=$('gaitType').value;resetMotion();};
 $('walk').onclick=()=>{
   const error=C.validate(config,legs);if(error){notice(error,'error');return;}
-  mode='gait';runner=null;running=true;lastTime=0;anchors.clear();$('pauseMotion').disabled=false;$('pauseMotion').textContent='Pause';
+  targetPoint=null;mode='gait';runner=null;running=true;lastTime=0;anchors.clear();$('pauseMotion').disabled=false;$('pauseMotion').textContent='Pause';
   notice('Walking with planted stance feet. Try another gait or scrub a cycle.','ok');sync();
 };
 $('pauseMotion').onclick=()=>{running=!running;lastTime=0;$('pauseMotion').textContent=running?'Pause':'Resume';sync();render();};
 $('resetMotion').onclick=resetMotion;
 $('moveBody').onchange=()=>{anchors.clear();trails.clear();if(mode==='gait'){frame=C.gaitFrame(config,legs,time,$('moveBody').checked);body=[...frame.body];}else{body=[0,-config.height,0];frame=poseFrame();}sync();render();};
 $('cyclePhase').oninput=()=>{
-  stopMotion();mode='gait';runner=null;time=Number($('cyclePhase').value)*config.period/1000;trails.clear();
+  targetPoint=null;stopMotion();mode='gait';runner=null;time=Number($('cyclePhase').value)*config.period/1000;trails.clear();
   frame=C.gaitFrame(config,legs,time,$('moveBody').checked);body=[...frame.body];poses=new Map(frame.legs.map(f=>[f.leg.id,{...f.pose}]));sync();render();
 };
 for(const [id,key] of [['jointHip','hip'],['jointSide','hipSide'],['jointKnee','knee']])$(id).oninput=()=>manualJoint(key,Number($(id).value));
-$('restLeg').onclick=()=>{stopMotion();mode='pose';runner=null;poses.set(selected,C.restPose(config,selectedLeg()));frame=poseFrame();recordTrails();sync();render();};
+$('restLeg').onclick=()=>{targetPoint=null;stopMotion();mode='pose';runner=null;poses.set(selected,C.restPose(config,selectedLeg()));frame=poseFrame();recordTrails();sync();render();};
 $('bodyStyle').onchange=render;$('transparentPlate').onchange=render;$('showSupport').onchange=render;$('footTrails').onchange=()=>{trails.clear();recordTrails();render();};$('followCamera').onchange=render;
 
 // Code workbench. Text remains in the editor when the robot design changes.
@@ -206,6 +277,7 @@ function checkSketch(){
     $('codeLine').textContent='Ready · '+(checked.scope==='one'?'Leg '+selected:'all attached legs');return true;
   }catch(e){checked=null;notice(e.message,'error');return false;}
 }
+$('downloadHardware').onclick=()=>{if(!checkSketch())return;try{const text=H.hardwareSketch($('robotCode').value,C.mappings(legs,selected,$('codeScope').value),calibration,checked.result,config);downloadText(text,'Robot_Calibrated.ino');notice('Calibrated sketch exported with pin map and physical limits. Keep the model sketch for simulation.','ok');}catch(e){notice(e.message,'error');}};
 $('checkCode').onclick=checkSketch;
 $('runCode').onclick=()=>{
   if(!checkSketch())return;
@@ -213,7 +285,7 @@ $('runCode').onclick=()=>{
   const writes=result.setupEvents.concat(result.loopEvents).filter(e=>e.type==='write');
   const fine=writes.length>0&&writes.every(e=>e.microseconds);
   runner={api,program:result.program,env:result.execution,setup:result.setupEvents,events:result.setupEvents.concat(result.loopEvents),index:0,elapsed:0,from:null,target:{...initial},scope,fine,phase:'setup'};
-  mode='code';running=true;lastTime=0;anchors.clear();trails.clear();frame=poseFrame(false);
+  targetPoint=null;mode='code';running=true;lastTime=0;anchors.clear();trails.clear();frame=poseFrame(false);
   $('pauseMotion').disabled=false;$('pauseMotion').textContent='Pause';notice('Playing setup once, then loop. '+(scope==='one'?'The chassis is held still.':'Travel is estimated from ground contacts.'),'ok');sync();render();
 };
 $('downloadCode').onclick=()=>{
@@ -327,6 +399,11 @@ function render(){
     joint(f.foot,f.foot[1]>6||!f.reachable?colors.bad:f.stance?colors.stance:colors.swing,6);
   }
   queue.sort((a,b)=>b.depth-a.depth).forEach(item=>item.paint());
+  if(targetPoint&&mode==='pose'){
+    const leg=selectedLeg(),world=C.add(C.add(body,[leg.x,0,leg.z]),targetPoint),q=project(world),solved=C.ik(targetPoint,leg,config);
+    ctx.strokeStyle=solved.reachable&&!H.poseError(solved.pose,leg,calibration)?'#087f83':'#c84737';ctx.lineWidth=3;ctx.beginPath();ctx.arc(q.x,q.y,13,0,Math.PI*2);ctx.moveTo(q.x-20,q.y);ctx.lineTo(q.x+20,q.y);ctx.moveTo(q.x,q.y-20);ctx.lineTo(q.x,q.y+20);ctx.stroke();
+  }
+
   // Surface markings and foot contact cues remain legible even where parts overlap.
   line3(arrow[0],arrow[1],'#416a80',3);
   polygon([bodyPt(0,bodyTop-2,arrowLen+14),bodyPt(-10,bodyTop-2,arrowLen-5),bodyPt(10,bodyTop-2,arrowLen-5)],'#416a80');
@@ -361,10 +438,13 @@ const pointers=new Map();let gesture=null,dragged=false,downPoint=null;
 function point(e){const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('pointerdown',e=>{
-  e.preventDefault();canvas.setPointerCapture(e.pointerId);const p=point(e);p.pan=e.shiftKey||e.button===2||e.button===1;pointers.set(e.pointerId,p);
+  e.preventDefault();canvas.setPointerCapture(e.pointerId);const p=point(e);
+  if(targetPoint&&mode==='pose'&&e.button===0&&!e.shiftKey){const leg=selectedLeg(),q=project(C.add(C.add(body,[leg.x,0,leg.z]),targetPoint));if(Math.hypot(p.x-q.x,p.y-q.y)<24){targetDrag=e.pointerId;return;}}
+p.pan=e.shiftKey||e.button===2||e.button===1;pointers.set(e.pointerId,p);
   downPoint=p;dragged=pointers.size>1;gesture=null;canvas.style.cursor='grabbing';
 });
 canvas.addEventListener('pointermove',e=>{
+  if(targetDrag===e.pointerId){e.preventDefault();dragTarget(point(e));return;}
   if(!pointers.has(e.pointerId))return;e.preventDefault();const p=point(e),prev=pointers.get(e.pointerId);
   if(Math.hypot(p.x-downPoint.x,p.y-downPoint.y)>4)dragged=true;
   if(pointers.size===1){
@@ -379,6 +459,7 @@ canvas.addEventListener('pointermove',e=>{
   document.querySelectorAll('[data-camera]').forEach(b=>b.classList.remove('selected'));render();
 });
 function release(e){
+  if(targetDrag===e.pointerId){targetDrag=null;return;}
   if(!dragged&&e.type==='pointerup'){const p=point(e),nearest=picks.map(q=>({...q,d:Math.hypot(p.x-q.x,p.y-q.y)})).sort((a,b)=>a.d-b.d)[0];if(nearest&&nearest.d<30)selectLeg(nearest.id);}
   pointers.delete(e.pointerId);gesture=null;if(!pointers.size)canvas.style.cursor='grab';
 }
@@ -395,6 +476,6 @@ function animate(t){
     recordTrails();sync();render();
   }catch(e){stopMotion();notice(e.message,'error');}
 }
-refreshGaits();renderMounts();scopeHelp();$('robotCode').value=C.oneLegSketch(config,selectedLeg());sync();
+refreshGaits();renderMounts();renderCalibration();scopeHelp();$('robotCode').value=C.oneLegSketch(config,selectedLeg());sync();
 new ResizeObserver(resize).observe(canvas);resize();requestAnimationFrame(animate);
 })();

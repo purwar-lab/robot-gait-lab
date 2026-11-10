@@ -6,13 +6,14 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), mod=(x,n=1)=>((x%n)+n)%n;
 const add=(a,b)=>a.map((v,i)=>v+b[i]), subtract=(a,b)=>a.map((v,i)=>v-b[i]);
 const rotateX=(v,a)=>[v[0],v[1]*Math.cos(a)-v[2]*Math.sin(a),v[1]*Math.sin(a)+v[2]*Math.cos(a)];
 const rotateZ=(v,a)=>[v[0]*Math.cos(a)-v[1]*Math.sin(a),v[0]*Math.sin(a)+v[1]*Math.cos(a),v[2]];
-function defaults(){return {shape:'rectangle',count:6,width:210,length:270,radius:145,height:225,stride:60,lift:25,period:2.5,gait:'tripod'};}
+function defaults(){return {thigh:140,shin:140,shape:'rectangle',count:6,width:210,length:270,radius:145,height:225,stride:60,lift:25,period:2.5,gait:'tripod'};}
 function mounts(config,previous=[]){
   return Array.from({length:config.count},(_,i)=>{
     const angle=2*Math.PI*(i+0.5)/config.count, sin=Math.sin(angle), cos=Math.cos(angle);
     const x=config.shape==='circle'?config.radius*sin:Math.sign(sin||1)*config.width/2;
     const z=config.shape==='circle'?config.radius*cos:cos*config.length/2;
-    return {id:i+1,x,z,side:x>=0?1:-1,dof:previous[i]?.dof??3,enabled:previous[i]?.enabled??true};
+    const custom=previous[i]?.customMount;const mountX=custom?previous[i].x:x,mountZ=custom?previous[i].z:z;
+    return {id:i+1,x:mountX,z:mountZ,customMount:!!custom,side:mountX>=0?1:-1,dof:previous[i]?.dof??3,enabled:previous[i]?.enabled??true};
   });
 }
 function gaitChoices(n){
@@ -30,22 +31,24 @@ function gaitSpec(name,n,index,leg){
   return {duty:0.64,offset:(index%2)*0.5};
 }
 function fixedSide(leg){return 90+leg.side*SPLAY;}
-function fk(pose){
+function fk(pose,geometry={}){
+  const thigh=geometry.thigh??L,shin=geometry.shin??L;
   const a=(pose.hip-90)*RAD,b=(90-pose.knee)*RAD,l=-(pose.hipSide-90)*RAD;
-  const knee=rotateZ(rotateX([0,L,0],a),l);
-  return {hip:[0,0,0],knee,foot:add(knee,rotateZ(rotateX([0,L,0],a+b),l))};
+  const knee=rotateZ(rotateX([0,thigh,0],a),l);
+  return {hip:[0,0,0],knee,foot:add(knee,rotateZ(rotateX([0,shin,0],a+b),l))};
 }
-function ik(target,leg){
+function ik(target,leg,geometry={}){
+  const thigh=geometry.thigh??L,shin=geometry.shin??L;
   let [x,y,z]=target;
   const lateral=leg.dof===2?leg.side*SPLAY*RAD:Math.atan2(x,y);
   const sagittalY=leg.dof===2?y/Math.cos(lateral):Math.hypot(x,y);
   const distance=Math.hypot(sagittalY,z);
-  const bend=Math.acos(clamp((distance*distance-2*L*L)/(2*L*L),-1,1));
-  const hip=Math.atan2(z,sagittalY)-Math.atan2(L*Math.sin(bend),L+L*Math.cos(bend));
+  const bend=Math.acos(clamp((distance*distance-thigh*thigh-shin*shin)/(2*thigh*shin),-1,1));
+  const hip=Math.atan2(z,sagittalY)-Math.atan2(shin*Math.sin(bend),thigh+shin*Math.cos(bend));
   const raw={hip:90+hip/RAD,hipSide:90+lateral/RAD,knee:90-bend/RAD};
   const pose=Object.fromEntries(Object.entries(raw).map(([k,v])=>[k,clamp(v,0,180)]));
-  const actual=fk(pose).foot, error=Math.hypot(...subtract(actual,target));
-  return {pose,actual,error,reachable:error<0.001&&distance<=2*L+1e-6};
+  const actual=fk(pose,geometry).foot, error=Math.hypot(...subtract(actual,target));
+  return {pose,actual,error,reachable:error<0.001&&distance<=thigh+shin+1e-6};
 }
 function footTarget(config,leg,phase,spec){
   const stance=phase<spec.duty;
@@ -65,14 +68,14 @@ function gaitFrame(config,legs,time,travel=true){
   const body=[0,-config.height,travel?time*speed:0];
   const frames=active.map((leg,i)=>{
     const spec=gaitSpec(config.gait,active.length,i,leg),phase=mod(time/config.period+spec.offset);
-    const target=footTarget(config,leg,phase,spec), solved=ik(target.point,leg);
-    const local=fk(solved.pose), mount=add(body,[leg.x,0,leg.z]);
+    const target=footTarget(config,leg,phase,spec), solved=ik(target.point,leg,config);
+    const local=fk(solved.pose,config), mount=add(body,[leg.x,0,leg.z]);
     return {leg,phase,duty:spec.duty,stance:target.stance,pose:solved.pose,reachable:solved.reachable,error:solved.error,
       hip:mount,knee:add(mount,local.knee),foot:add(mount,local.foot)};
   });
   return {body,legs:frames,speed};
 }
-function restPose(config,leg){return ik([config.height*Math.tan(SPLAY*RAD)*leg.side,config.height,0],leg).pose;}
+function restPose(config,leg){return ik([config.height*Math.tan(SPLAY*RAD)*leg.side,config.height,0],leg,config).pose;}
 function validate(config,legs){
   if(!legs.some(l=>l.enabled))return 'Attach at least one leg to start.';
   if(!gaitChoices(legs.filter(l=>l.enabled).length).some(g=>g.id===config.gait))return 'Choose a gait for the current leg count.';
@@ -161,7 +164,7 @@ function oneLegSketch(config,leg){
   lines.push('  delay(600);','}','','void loop() {');
   for(const [z,lift,label] of [[0,config.lift,'Lift'],[config.stride/2,config.lift,'Reach forward'],[config.stride/2,0,'Plant'],[-config.stride/2,0,'Push backward'],[0,0,'Center']]){
     const y=config.height-lift,x=(leg.dof===2?y:config.height)*Math.tan(SPLAY*RAD)*leg.side;
-    const solved=ik([x,y,z],leg);if(!solved.reachable)throw Error('This one-leg exercise is out of reach; reduce stride/lift.');
+    const solved=ik([x,y,z],leg,config);if(!solved.reachable)throw Error('This one-leg exercise is out of reach; reduce stride/lift.');
     lines.push('  // '+label);
     for(const key of jointKeys(leg))lines.push('  '+key+'.write('+Math.round(solved.pose[key])+');');
     lines.push('  delay(350);');

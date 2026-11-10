@@ -3,7 +3,7 @@
 <h1>Robot lab browser checks</h1><pre id="results" data-status="running">Running…</pre><iframe id="app" title="Robot lab under test"></iframe>
 <script>
 const results=document.getElementById('results'),frame=document.getElementById('app');
-frame.addEventListener('load',()=>{
+frame.addEventListener('load',async()=>{
   if(!frame.contentDocument.getElementById('robotScene'))return;
   const w=frame.contentWindow,d=w.document,$=id=>d.getElementById(id),checks=[],errors=[];
   w.addEventListener('error',e=>errors.push(e.message));
@@ -69,6 +69,43 @@ frame.addEventListener('load',()=>{
     $('presetSix').click();$('loadExample').click();change('cyclePhase','300','input');
     check('hexapod reset is reachable',!$('walk').disabled);
     check('visible stance and swing phases',[...d.querySelectorAll('.phase-state')].some(n=>n.textContent==='swing')&&[...d.querySelectorAll('.phase-state')].some(n=>n.textContent==='stance'));
+    $('presetFour').click();change('thighLength','160');change('shinLength','130');
+    check('custom dimensions update the scene',!$('walk').disabled&&$('thighLength').value==='160');
+    $('enableTarget').click();check('current foot target is reachable',$('targetStatus').textContent.startsWith('Reachable'));
+    const ctx=$('robotScene').getContext('2d'),originalArc=ctx.arc;let targetScreen=null;
+    ctx.arc=function(x,y,r,...args){if(r===13&&this.strokeStyle==='#087f83')targetScreen={x,y};return originalArc.call(this,x,y,r,...args);};
+    $('enableTarget').click();check('target ring is drawn',!!targetScreen);
+    const targetCanvas=$('robotScene'),capture=targetCanvas.setPointerCapture;targetCanvas.setPointerCapture=()=>{};
+    const rect=targetCanvas.getBoundingClientRect(),oldX=Number($('targetX').value),oldZ=$('targetZ').value;
+    const event=(type,x,y)=>targetCanvas.dispatchEvent(new w.PointerEvent(type,{pointerId:77,button:0,clientX:rect.left+x,clientY:rect.top+y,bubbles:true}));
+    const start={...targetScreen};event('pointerdown',start.x,start.y);event('pointermove',start.x+3,start.y-2);event('pointerup',start.x+3,start.y-2);
+    check('dragging moves target in the selected plane',Number($('targetX').value)!==oldX&&$('targetZ').value===oldZ&&$('targetStatus').textContent.startsWith('Reachable'));
+    targetCanvas.setPointerCapture=capture;ctx.arc=originalArc;
+    const validHip=$('jointHip').value,validKnee=$('jointKnee').value;change('targetY','900');$('applyTarget').click();
+    check('unreachable target keeps the valid leg pose',$('targetStatus').textContent.includes('Unreachable')&&$('jointHip').value===validHip&&$('jointKnee').value===validKnee);
+    $('enableTarget').click();change('selectedDof','2');$('enableTarget').click();change('targetX','0');$('applyTarget').click();
+    check('2-DOF target rejects lateral displacement',$('targetStatus').textContent.includes('Unreachable'));
+    change('selectedDof','3');$('enableTarget').click();
+    const cal=(key,field)=>d.querySelector('[data-joint="'+key+'"] [data-field="'+field+'"]');
+    cal('hip','neutral').value='100';cal('hip','direction').value='-1';cal('hip','pin').value='9';$('applyCalibration').click();
+    check('physical servo readout applies neutral and reversal',Math.abs(parseFloat($('physical-hip').textContent.split('->')[1])-(190-parseFloat($('physical-hip').textContent)))<.2);
+    cal('hip','min').value='110';$('applyCalibration').click();check('invalid calibration is rejected',$('calibrationStatus').textContent.includes('neutral inside'));
+    cal('hip','min').value='0';$('applyCalibration').click();
+    let savedBlob;const createURL=w.URL.createObjectURL,anchorClick=w.HTMLAnchorElement.prototype.click;
+    w.URL.createObjectURL=blob=>{savedBlob=blob;return 'blob:test';};w.HTMLAnchorElement.prototype.click=function(){};
+    change('mountX','120');change('mountZ','80');$('applyMount').click();
+    check('custom mount is applied',$('calibrationStatus').textContent.includes('Custom mount')&&$('mountX').value==='120.0');
+    $('saveDesign').click();const saved=await savedBlob.text(),design=JSON.parse(saved);
+    check('saved design includes dimensions and calibration',design.config.thigh===160&&design.calibration['1.hip'].neutral===100&&design.legs[0].customMount&&design.legs[0].x===120);
+    $('presetSix').click();const transfer=new w.DataTransfer();transfer.items.add(new w.File([saved],'design.json',{type:'application/json'}));$('loadDesign').files=transfer.files;await $('loadDesign').onchange();
+    check('design import restores layout and calibration',$('legCount').value==='4'&&$('thighLength').value==='160'&&cal('hip','neutral').value==='100'&&$('mountX').value==='120.0');
+    $('loadExample').click();const originalModel=$('robotCode').value;$('downloadHardware').click();
+    check('hardware export applies calibration without modifying model code',(await savedBlob.text()).includes('writeCalibrated(hip,')&&$('robotCode').value===originalModel);
+    $('enableTarget').click();for(const axis of ['X','Y','Z'])change('measured'+axis,$('target'+axis).value);
+    $('captureMeasurement').click();check('measured foot comparison reports a near-zero error',/position error 0\.0[0-9]/.test($('measurementStatus').textContent));
+    $('downloadMeasurements').click();check('measurement CSV contains coordinates and error',(await savedBlob.text()).includes('sim_x,sim_y,sim_z,measured_x'));
+    w.URL.createObjectURL=createURL;w.HTMLAnchorElement.prototype.click=anchorClick;
+    $('presetSix').click();
     const sceneLayout=d.querySelector('.scene-and-joints');
     check('joint controls share the scene workspace',sceneLayout.contains($('jointKnee')));
     frame.style.width='360px';
@@ -84,6 +121,7 @@ frame.addEventListener('load',()=>{
       $('footTrails').checked=true;$('footTrails').dispatchEvent(new w.Event('change'));d.querySelector('[data-camera="side"]').click();
       $('runCode').click();w.__advance(10000);$('pauseMotion').click();
     }
+    if(params.has('design')){d.querySelector('.target-controls').open=true;$('enableTarget').click();}
     if(params.has('box')){change('bodyStyle','box');$('transparentPlate').checked=false;$('transparentPlate').dispatchEvent(new w.Event('change'));}
     if(params.has('screenshot')){
       results.hidden=true;document.querySelector('h1').hidden=true;document.body.style.margin='0';frame.style.border='0';
