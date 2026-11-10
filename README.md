@@ -102,3 +102,5 @@ Robot code playback linearly interpolates joint samples across their delay inter
 The single-leg lab shows an open rectangular chassis frame, shaded links, and the same world-coordinate foot path in all views. Pose sliders sit beside the canvas on desktop and directly beneath it on narrow screens. The robot lab also places Test one leg inside the scene workspace so joint changes can be watched without scrolling between sections. The chassis frame is a visual mount reference; it does not change kinematics or enforce collisions.
 
 The site homepage opens the full robot builder and gait simulator. Use its Single-leg lab link to open `single-leg.html`. The previous `robot.html` address redirects to the homepage.
+
+Joint axes can be toggled in the single-leg camera toolbar. Gold marks the lateral axis, teal hip flexion, and purple the knee. Flexion and knee axes follow the proximal lateral rotation. In the gait lab, Body construction selects a thin plate or a raised box (drum for a circular outline); Transparent body toggles translucency. Body construction is visual and leaves hip mount locations and walking kinematics unchanged.

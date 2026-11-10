@@ -12,6 +12,11 @@ frame.addEventListener('load',()=>{
   try{
     check('initial six-leg assembly',d.querySelectorAll('.mount').length===6);
     check('initial reachable gait',!$('walk').disabled&&$('motorCount').textContent==='18 servos');
+    const bodyImage=()=>$('robotScene').toDataURL();
+    const plateImage=bodyImage();change('bodyStyle','box');check('box body changes the rendered scene',bodyImage()!==plateImage);
+    const transparentImage=bodyImage();$('transparentPlate').checked=false;$('transparentPlate').dispatchEvent(new w.Event('change'));
+    check('opaque body changes the rendered scene',bodyImage()!==transparentImage);
+    $('transparentPlate').checked=true;$('transparentPlate').dispatchEvent(new w.Event('change'));change('bodyStyle','plate');
     change('plateShape','circle');check('circle dimensions shown',$('rectangleSize').hidden&&!$('circleSize').hidden);
     d.querySelector('[data-leg="3"]').click();check('leg selection',$('selectedLegLabel').textContent==='Leg 3');
     change('selectedDof','2');check('per-leg 2 DOF',$('jointSide').disabled&&$('motorCount').textContent==='17 servos');
@@ -79,6 +84,7 @@ frame.addEventListener('load',()=>{
       $('footTrails').checked=true;$('footTrails').dispatchEvent(new w.Event('change'));d.querySelector('[data-camera="side"]').click();
       $('runCode').click();w.__advance(10000);$('pauseMotion').click();
     }
+    if(params.has('box')){change('bodyStyle','box');$('transparentPlate').checked=false;$('transparentPlate').dispatchEvent(new w.Event('change'));}
     if(params.has('screenshot')){
       results.hidden=true;document.querySelector('h1').hidden=true;document.body.style.margin='0';frame.style.border='0';
       frame.style.width=params.has('mobile')?'360px':'100%';frame.style.height='1800px';

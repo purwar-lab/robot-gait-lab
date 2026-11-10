@@ -172,7 +172,7 @@ $('cyclePhase').oninput=()=>{
 };
 for(const [id,key] of [['jointHip','hip'],['jointSide','hipSide'],['jointKnee','knee']])$(id).oninput=()=>manualJoint(key,Number($(id).value));
 $('restLeg').onclick=()=>{stopMotion();mode='pose';runner=null;poses.set(selected,C.restPose(config,selectedLeg()));frame=poseFrame();recordTrails();sync();render();};
-$('transparentPlate').onchange=render;$('showSupport').onchange=render;$('footTrails').onchange=()=>{trails.clear();recordTrails();render();};$('followCamera').onchange=render;
+$('bodyStyle').onchange=render;$('transparentPlate').onchange=render;$('showSupport').onchange=render;$('footTrails').onchange=()=>{trails.clear();recordTrails();render();};$('followCamera').onchange=render;
 
 // Code workbench. Text remains in the editor when the robot design changes.
 function rememberCodeSelection(){const e=$('robotCode');codeSelection={start:e.selectionStart,end:e.selectionEnd};}
@@ -291,18 +291,21 @@ function render(){
   const queue=[],push=(points,paint,bias=0)=>queue.push({depth:points.reduce((n,p)=>n+project(p).depth,0)/points.length+bias,paint});
   const bodyPt=(x,y,z)=>C.add(frame.body,[x,y,z]);
   function face(points,fill){push(points,()=>{ctx.save();ctx.globalAlpha=$('transparentPlate').checked?0.55:1;polygon(points,fill,'#64899c',1);ctx.restore();});}
+  const bodyTop=$('bodyStyle').value==='box'?-72:-16,bodyDepth=8-bodyTop;
   if(config.shape==='rectangle'){
     const x=config.width/2,z=config.length/2;
-    const top=[bodyPt(-x,-16,-z),bodyPt(x,-16,-z),bodyPt(x,-16,z),bodyPt(-x,-16,z)],bottom=top.map(p=>[p[0],p[1]+24,p[2]]);
+    const top=[bodyPt(-x,bodyTop,-z),bodyPt(x,bodyTop,-z),bodyPt(x,bodyTop,z),bodyPt(-x,bodyTop,z)],bottom=top.map(p=>[p[0],p[1]+bodyDepth,p[2]]);
     for(let i=0;i<4;i++){const j=(i+1)%4;face([top[i],top[j],bottom[j],bottom[i]],i%2?'#85a9bd':'#9ebdce');}
+    face(top.map(p=>[p[0],p[1]+bodyDepth,p[2]]),'#789bab');
     face(top,'#c9dee8');
   }else{
-    const top=Array.from({length:32},(_,i)=>bodyPt(config.radius*Math.cos(i*Math.PI/16),-16,config.radius*Math.sin(i*Math.PI/16)));
-    for(let i=0;i<top.length;i++){const a=top[i],b=top[(i+1)%top.length];face([a,b,[b[0],b[1]+24,b[2]],[a[0],a[1]+24,a[2]]],i<16?'#91b2c5':'#a3bfce');}
+    const top=Array.from({length:32},(_,i)=>bodyPt(config.radius*Math.cos(i*Math.PI/16),bodyTop,config.radius*Math.sin(i*Math.PI/16)));
+    for(let i=0;i<top.length;i++){const a=top[i],b=top[(i+1)%top.length];face([a,b,[b[0],b[1]+bodyDepth,b[2]],[a[0],a[1]+bodyDepth,a[2]]],i<16?'#91b2c5':'#a3bfce');}
+    face(top.map(p=>[p[0],p[1]+bodyDepth,p[2]]),'#789bab');
     face(top,'#c9dee8');
   }
   const arrowLen=config.shape==='circle'?config.radius*.55:config.length*.28;
-  const arrow=[bodyPt(0,-18,-arrowLen*.5),bodyPt(0,-18,arrowLen)];
+  const arrow=[bodyPt(0,bodyTop-2,-arrowLen*.5),bodyPt(0,bodyTop-2,arrowLen)];
 
   function rod(a,b,color,radius){
     push([a,b],()=>{const A=project(a),B=project(b);ctx.lineCap='round';ctx.strokeStyle='#25465a';ctx.lineWidth=radius*(A.scale+B.scale)/2+2;ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke();
@@ -326,7 +329,7 @@ function render(){
   queue.sort((a,b)=>b.depth-a.depth).forEach(item=>item.paint());
   // Surface markings and foot contact cues remain legible even where parts overlap.
   line3(arrow[0],arrow[1],'#416a80',3);
-  polygon([bodyPt(0,-18,arrowLen+14),bodyPt(-10,-18,arrowLen-5),bodyPt(10,-18,arrowLen-5)],'#416a80');
+  polygon([bodyPt(0,bodyTop-2,arrowLen+14),bodyPt(-10,bodyTop-2,arrowLen-5),bodyPt(10,bodyTop-2,arrowLen-5)],'#416a80');
   for(const f of frame.legs){
     const q=project(f.foot),color=f.foot[1]>6||!f.reachable?colors.bad:f.stance?colors.stance:colors.swing;
     ctx.beginPath();ctx.arc(q.x,q.y,Math.max(4,6*q.scale),0,Math.PI*2);ctx.fillStyle=color;ctx.fill();ctx.strokeStyle='#ffffff';ctx.lineWidth=1.5;ctx.stroke();

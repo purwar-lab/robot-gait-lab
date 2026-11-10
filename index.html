@@ -15,7 +15,8 @@
     <aside class="card designer">
       <div class="section-heading"><span class="step">01</span><h2>Build your robot</h2></div>
       <div class="preset-row"><button id="presetSix">Hexapod</button><button id="presetFour">Quadruped</button></div>
-      <label class="field" for="plateShape">Body plate<select id="plateShape"><option value="rectangle">Rectangular plate</option><option value="circle">Circular plate</option></select></label>
+      <label class="field" for="plateShape">Body outline<select id="plateShape"><option value="rectangle">Rectangular plate</option><option value="circle">Circular plate</option></select></label>
+      <label class="field" for="bodyStyle">Body construction<select id="bodyStyle"><option value="plate">Thin plate</option><option value="box">Raised box / drum</option></select></label>
       <div class="two-fields">
         <label class="field" for="legCount">Mounts<select id="legCount"><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option><option>7</option><option>8</option></select></label>
         <label class="field" for="allDof">Leg type<select id="allDof"><option value="3">3 DOF</option><option value="2">2 DOF</option></select></label>
@@ -57,7 +58,7 @@
 </div>
       <div class="scene-options">
         <span>Drag to orbit · Shift/right-drag to pan · Scroll to zoom · Pinch on touch</span>
-        <div><label><input id="transparentPlate" type="checkbox" checked> Transparent plate</label><label><input id="showSupport" type="checkbox" checked> Support area</label><label><input id="footTrails" type="checkbox"> Foot trails</label></div>
+        <div><label><input id="transparentPlate" type="checkbox" checked> Transparent body</label><label><input id="showSupport" type="checkbox" checked> Support area</label><label><input id="footTrails" type="checkbox"> Foot trails</label></div>
       </div>
       <div class="readouts">
         <div><span>ATTACHED</span><strong id="legSummary">6 legs · 18 DOF</strong></div>

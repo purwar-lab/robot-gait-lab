@@ -49,6 +49,7 @@ main{grid-template-columns:minmax(0,1fr)}
         <button type="button" class="view-btn" data-view="xz">XZ · top</button>
         <button type="button" class="view-btn" data-view="yz">YZ · side</button>
         <button type="button" id="resetCamera">Reset camera</button>
+        <label><input id="jointAxes" type="checkbox" checked> Joint axes</label>
         <span class="view-state" id="cameraState">Zoom 100%</span>
       </div>
       <div class="view-help"><strong>Orbit:</strong> left-drag · <strong>Pan:</strong> Shift+drag or right-drag · <strong>Zoom:</strong> scroll wheel · <strong>Touch:</strong> one finger orbit, two fingers pan/pinch · Double-click resets camera.</div>
@@ -85,6 +86,7 @@ main{grid-template-columns:minmax(0,1fr)}
       </div>
 
 </div></div>
+    <div class="view-help" style="padding:8px 16px">Rotation axes: <span style="color:#d18a19">gold: lateral hip</span> &middot; <span style="color:#087f8c">teal: hip flexion</span> &middot; <span style="color:#8556b3">purple: knee</span>. Dashed guides pass through each joint; flexion and knee axes turn with the lateral hip.</div>
     <div class="subviews">
       <div class="subview"><div class="label">XY plane · front view</div><canvas id="xyView" width="250" height="210" aria-label="XY projection, x right and y down"></canvas></div>
       <div class="subview"><div class="label">XZ plane · top view</div><canvas id="xzView" width="250" height="210" aria-label="XZ projection, x right and z up"></canvas></div>
@@ -282,7 +284,7 @@ function drawJointLabels(H,K,F){
   for(const [p,label,color,width] of [[F,'Foot','#b7671e',30],[K,'Knee','#7156a5',34],[H,'Hip','#0b7d87',24]]){
     if(points.some(q=>Math.hypot(p.x-q.x,p.y-q.y)<25))continue;
     points.push(p);
-    for(const [dx,dy] of [[18,-8],[-width-18,-8],[18,22]]){
+    for(const [dx,dy] of [[18,22],[18,-8],[-width-18,-8]]){
       const x=p.x+dx,y=p.y+dy, box={x,y:y-13,w:width,h:16};
       if(x<10||x+width>canvas.width-10||y<45||y>canvas.height-10)continue;
       if(x+width>canvas.width-186&&y<115)continue;
@@ -292,6 +294,24 @@ function drawJointLabels(H,K,F){
   }
 }
 
+// Axis directions are in world coordinates, matching the proximal lateral rotation.
+function jointAxes(p,mode=$('mode3').value){
+  const lateral=deg2rad(-(p.hipSide-90)),flex=mode==='abduction'?rotateZ([1,0,0],lateral):rotateY([1,0,0],lateral);
+  const {hipPt,kneePt}=computeLeg(p,mode);
+  return [{point:hipPt,direction:mode==='abduction'?[0,0,1]:[0,1,0],color:'#d18a19',radius:65},
+    {point:hipPt,direction:flex,color:'#087f8c',radius:50},{point:kneePt,direction:flex,color:'#8556b3',radius:50}];
+}
+function drawJointAxes(){
+  if(!$('jointAxes').checked)return;
+  ctx.save();ctx.lineWidth=2;ctx.setLineDash([5,4]);
+  for(const axis of jointAxes(pose)){
+    const a=project3D(add(axis.point,axis.direction.map(v=>-v*axis.radius))),b=project3D(add(axis.point,axis.direction.map(v=>v*axis.radius)));
+    ctx.strokeStyle=axis.color;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    ctx.setLineDash([]);ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.stroke();ctx.setLineDash([5,4]);
+  }
+  ctx.restore();
+}
+$('jointAxes').onchange=drawAll;
 function drawMainScene(){
   const {hipPt,kneePt,footPt} = computeLeg(pose);
   ctx.clearRect(0,0,canvas.width,canvas.height); const sky=ctx.createLinearGradient(0,0,0,canvas.height);sky.addColorStop(0,'#f8fbfd');sky.addColorStop(1,'#edf5f8');ctx.fillStyle=sky; ctx.fillRect(0,0,canvas.width,canvas.height); drawGrid3D();
@@ -310,6 +330,7 @@ function drawMainScene(){
     parts.push({depth:depth(point),draw(){const p=project3D(point);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);const shade=ctx.createRadialGradient(p.x-radius*.3,p.y-radius*.35,1,p.x,p.y,radius);shade.addColorStop(0,'#e7f0f2');shade.addColorStop(.45,color);shade.addColorStop(1,'#426475');ctx.fillStyle=shade;ctx.fill();ctx.strokeStyle='#ffffffb0';ctx.lineWidth=2;ctx.stroke();ctx.beginPath();ctx.arc(p.x-radius*.25,p.y-radius*.25,radius*.4,0,Math.PI*2);ctx.fillStyle='#ffffff40';ctx.fill();}});
   }
   parts.sort((a,b)=>a.depth-b.depth).forEach(part=>part.draw());
+  drawJointAxes();
   drawJointLabels(H,K,F);
   drawAxes3D();
 

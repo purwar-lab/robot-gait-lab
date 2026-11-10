@@ -35,7 +35,7 @@ function harness() {
   };
   vm.createContext(context);
   const exposed = script.replace(/\}\)\(\);\s*$/, `
-    globalThis.api = { computeLeg, planeProject, project3D, setCameraView, parse, build, start, animate,
+    globalThis.api = { jointAxes, computeLeg, planeProject, project3D, setCameraView, parse, build, start, animate,
       setPose, insertSnippet, recordFoot, MAX_TRAIL_POINTS,
       state: () => ({pose, trail, sequence, running, paused, targetPose, visibleIndex, camera, execution}) };
   })();`);
@@ -224,4 +224,17 @@ test('copy and .ino export preserve exact sketch text', async () => {
   await h.node('copy').onclick(); assert.equal(h.context.copied, text);
   h.node('download').onclick(); assert.equal(h.downloads[0].name, 'Three_DOF_Leg_Custom.ino');
   assert.equal(await h.context.exportBlob.text(), text);
+});
+
+test('joint axes pass through their pivots and stay perpendicular to moving links', () => {
+  const {api}=harness();
+  for(const mode of ['abduction','yaw'])for(const hipSide of [0,45,90,135,180]){
+    const pose={hip:125,hipSide,knee:50},axes=api.jointAxes(pose,mode),leg=api.computeLeg(pose,mode);
+    vectorNear(axes[0].direction,mode==='abduction'?[0,0,1]:[0,1,0]);
+    vectorNear(axes[1].point,leg.hipPt);vectorNear(axes[2].point,leg.kneePt);
+    vectorNear(axes[1].direction,axes[2].direction);
+    near(Math.hypot(...axes[1].direction),1);
+    near(axes[1].direction.reduce((sum,v,i)=>sum+v*(leg.kneePt[i]-leg.hipPt[i]),0),0);
+    near(axes[2].direction.reduce((sum,v,i)=>sum+v*(leg.footPt[i]-leg.kneePt[i]),0),0);
+  }
 });
