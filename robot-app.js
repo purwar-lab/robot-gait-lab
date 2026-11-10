@@ -135,7 +135,7 @@ function recordTrails(){
 }
 function manualJoint(key,value){
   stopMotion();mode='pose';runner=null;const leg=selectedLeg();if(!leg.enabled)return;
-  poses.set(leg.id,{...poses.get(leg.id),[key]:value});frame=poseFrame();sync();render();
+  poses.set(leg.id,{...poses.get(leg.id),[key]:value});frame=poseFrame();recordTrails();sync();render();
 }
 function configure(id,key,event='input'){
   $(id).addEventListener(event,()=>{
@@ -171,8 +171,8 @@ $('cyclePhase').oninput=()=>{
   frame=C.gaitFrame(config,legs,time,$('moveBody').checked);body=[...frame.body];poses=new Map(frame.legs.map(f=>[f.leg.id,{...f.pose}]));sync();render();
 };
 for(const [id,key] of [['jointHip','hip'],['jointSide','hipSide'],['jointKnee','knee']])$(id).oninput=()=>manualJoint(key,Number($(id).value));
-$('restLeg').onclick=()=>{stopMotion();mode='pose';runner=null;poses.set(selected,C.restPose(config,selectedLeg()));frame=poseFrame();sync();render();};
-$('transparentPlate').onchange=render;$('showSupport').onchange=render;$('footTrails').onchange=()=>{trails.clear();render();};$('followCamera').onchange=render;
+$('restLeg').onclick=()=>{stopMotion();mode='pose';runner=null;poses.set(selected,C.restPose(config,selectedLeg()));frame=poseFrame();recordTrails();sync();render();};
+$('transparentPlate').onchange=render;$('showSupport').onchange=render;$('footTrails').onchange=()=>{trails.clear();recordTrails();render();};$('followCamera').onchange=render;
 
 // Code workbench. Text remains in the editor when the robot design changes.
 function rememberCodeSelection(){const e=$('robotCode');codeSelection={start:e.selectionStart,end:e.selectionEnd};}
