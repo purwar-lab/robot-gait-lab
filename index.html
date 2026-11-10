@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>3-DOF Leg Arduino Motion Playground</title>
+<style>
+:root{--navy:#16324d;--teal:#0b7d87;--purple:#7156a5;--orange:#ef8b35;--green:#2e8b57;--border:#d5dee7;--bg:#f3f6fa;--panel:#fff;--muted:#5f7286}
+*{box-sizing:border-box} body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--navy)}
+header{background:#123249;color:#fff;padding:20px max(20px,calc((100vw - 1500px)/2))} header h1{margin:0 0 4px;font-size:28px} header p{margin:0;color:#d6e8f3}
+main{max-width:1500px;margin:auto;padding:18px;display:grid;grid-template-columns:minmax(470px,1.05fr) minmax(430px,1fr);gap:16px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:0 2px 12px rgba(16,42,66,.08);overflow:hidden}.pad{padding:18px 20px}
+h2{margin:0 0 10px;font-size:18px}h3{margin:16px 0 8px;font-size:15px}p{margin:0 0 10px}.small{font-size:12px;color:var(--muted)}
+canvas{display:block;width:100%;height:auto;background:linear-gradient(#fbfdff,#f7fbff);touch-action:none;cursor:grab} canvas.dragging{cursor:grabbing}
+#scene{border-bottom:1px solid var(--border)} .viewport-tools{padding:11px 16px;border-bottom:1px solid var(--border);background:#f8fbfe}.viewport-tools .actions{align-items:center}
+button{cursor:pointer;border:1px solid #bfcfdc;background:#fff;border-radius:8px;padding:8px 12px;color:var(--navy);font-weight:650} button.primary{background:var(--teal);color:#fff;border-color:var(--teal)} button.dark{background:#173d59;color:#fff;border-color:#173d59} button:disabled{opacity:.45;cursor:default}
+button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #87d2e9;outline-offset:2px}
+.view-btn.selected{background:#d8eff1;border-color:#0b7d87;color:#045c65}.view-help{font-size:12px;color:var(--muted);margin-top:7px}.view-state{font-size:12px;font-weight:650;color:#426076;margin-left:auto}
+.slider-row{margin:12px 0 16px}.slider-label{display:flex;justify-content:space-between;font-weight:650}.v{color:var(--teal);font-variant-numeric:tabular-nums} input[type=range]{width:100%;accent-color:var(--teal)} input[type=number], select{padding:6px;border:1px solid var(--border);border-radius:6px;background:#fff} input[type=number]{width:90px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:12px;margin-top:10px}.help{background:#eaf5f7;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:12px}
+.editor{display:block;width:100%;min-height:500px;resize:vertical;background:#102539;color:#f4f8ff;border:1px solid #264860;border-radius:9px;padding:14px 15px;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2;white-space:pre;overflow:auto}
+.status{border-radius:8px;padding:9px 12px;background:#eef5f8;border:1px solid #d5e6eb;font-size:13px;min-height:40px;margin:11px 0}.status.error{background:#fff0ed;border-color:#f4bcb0;color:#9b3729}.status.ok{background:#edf8f0;border-color:#afd7bb;color:#235f38}
+.timeline{max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:9px}.timeline table{width:100%;border-collapse:collapse;font-size:12px}.timeline th{position:sticky;top:0;background:#f2f6fa;text-align:left}.timeline td,.timeline th{padding:7px 9px;border-bottom:1px solid #e9eef2}.timeline tr.active{background:#e0f3f4}.timeline tr{cursor:pointer}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.stats span{background:#f0f5f8;border-radius:7px;padding:6px 9px;font-size:12px} #progress{width:100%;accent-color:var(--teal)} footer{max-width:1500px;margin:auto;padding:0 18px 20px;font-size:12px;color:var(--muted)}
+.subviews{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px;border-top:1px solid var(--border);background:#fafcfe}.subview{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff}.subview .label{padding:6px 10px;background:#f2f7fb;border-bottom:1px solid var(--border);font-weight:650;font-size:12px}.subview canvas{width:100%;height:auto;cursor:default}.explain{background:#fff8e8;border:1px solid #f0dca8;color:#694d0a;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:10px}
+@media(max-width:1000px){main{grid-template-columns:1fr}.editor{min-height:380px}.subviews{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>3-DOF Leg · Arduino Motion Playground</h1>
+  <p>3D visualization with orbit, zoom, pan, and simultaneous XY, XZ, and YZ projection views.</p>
+</header>
+<main>
+  <section class="panel">
+    <div class="viewport-tools">
+      <div class="actions" role="group" aria-label="Camera view presets">
+        <button type="button" class="view-btn selected" data-view="iso">3D Isometric</button>
+        <button type="button" class="view-btn" data-view="xy">XY · front</button>
+        <button type="button" class="view-btn" data-view="xz">XZ · top</button>
+        <button type="button" class="view-btn" data-view="yz">YZ · side</button>
+        <button type="button" id="resetCamera">Reset camera</button>
+        <span class="view-state" id="cameraState">Zoom 100%</span>
+      </div>
+      <div class="view-help"><strong>Orbit:</strong> left-drag · <strong>Pan:</strong> Shift+drag or right-drag · <strong>Zoom:</strong> scroll wheel · <strong>Touch:</strong> one finger orbit, two fingers pan/pinch · Double-click resets camera.</div>
+    </div>
+    <canvas id="scene" width="820" height="560" aria-label="Interactive 3D leg visualization"></canvas>
+    <div class="subviews">
+      <div class="subview"><div class="label">XY plane · front view</div><canvas id="xyView" width="250" height="210" aria-label="XY projection, x right and y down"></canvas></div>
+      <div class="subview"><div class="label">XZ plane · top view</div><canvas id="xzView" width="250" height="210" aria-label="XZ projection, x right and z up"></canvas></div>
+      <div class="subview"><div class="label">YZ plane · side view</div><canvas id="yzView" width="250" height="210" aria-label="YZ projection, z right and y down"></canvas></div>
+    </div>
+    <div class="pad">
+      <h2>1 · Set a pose</h2>
+      <p class="small">These are servo commands in degrees. Neutral is 90° for all three servos.</p>
+
+      <div class="controls" style="margin-bottom:8px">
+        <label for="mode3">Third hip DOF interpretation</label>
+        <select id="mode3">
+          <option value="abduction">Hip abduction / adduction (about z-axis)</option>
+          <option value="yaw">Hip yaw / steering (about y-axis)</option>
+        </select>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-label"><label for="hipPitch">Hip flexion / extension servo · A0</label><span class="v" id="hipPitchVal">90°</span></div>
+        <input id="hipPitch" type="range" min="0" max="180" value="90" step="1" />
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><label for="hipSide">Hip lateral servo · A2</label><span class="v" id="hipSideVal">90°</span></div>
+        <input id="hipSide" type="range" min="0" max="180" value="90" step="1" />
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><label for="knee">Knee servo · A1</label><span class="v" id="kneeVal">90°</span></div>
+        <input id="knee" type="range" min="0" max="180" value="90" step="1" />
+      </div>
+
+      <div class="actions">
+        <button id="neutral">Reset pose: 90° / 90° / 90°</button>
+        <button id="clearTrail">Clear foot path</button>
+      </div>
+
+      <h3>2 · Add this pose to your sketch</h3>
+      <div class="actions">
+        <button class="primary" id="insertAll">+ Insert all three servos + delay</button>
+        <button id="insertHipPitch">+ Hip flex/ext only</button>
+        <button id="insertHipSide">+ Hip lateral only</button>
+        <button id="insertKnee">+ Knee only</button>
+      </div>
+      <div class="controls">
+        <label for="wait">Wait after commands:</label>
+        <input type="number" id="wait" min="0" max="10000" step="50" value="350" /><span>ms</span>
+      </div>
+
+      <div class="stats">
+        <span id="poseStat">Command: hip 90°, hipSide 90°, knee 90°</span>
+        <span id="footStat">Foot: x 0, y 280, z 0 (model units)</span>
+      </div>
+
+      <div class="help" id="modeHelp"></div>
+      <div class="explain" id="projectionExplain"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="pad">
+      <h2>3 · Edit Arduino code</h2>
+      <p class="small">Use servo objects such as <code>hip</code>, <code>hipSide</code>, and <code>knee</code>. Playback runs <code>setup()</code> once, then reevaluates <code>loop()</code> on each repeat.</p>
+      <textarea id="editor" class="editor" spellcheck="false" aria-label="Editable Arduino sketch"></textarea>
+      <div class="actions" style="margin-top:10px">
+        <button id="resetCode">Restore sample sketch</button>
+        <button id="download">Download .ino</button>
+        <button id="copy">Copy code</button>
+      </div>
+
+      <h3>4 · Build &amp; play your sequence</h3>
+      <div class="actions">
+        <button class="primary" id="build">✓ Check / build sequence</button>
+        <button class="dark" id="play">▶ Play code</button>
+        <button id="pause" disabled>❚❚ Pause</button>
+        <button id="stop">■ Stop</button>
+        <button id="step">Step one command</button>
+      </div>
+      <div class="controls">
+        <label for="speed">Playback speed</label>
+        <input style="width:120px" id="speed" type="range" min="0.25" max="3" step="0.25" value="1" />
+        <strong id="speedVal">1×</strong>
+        <label><input id="repeat" type="checkbox" checked /> Repeat loop</label>
+        <label><input id="showTrail" type="checkbox" checked /> Foot path</label>
+      </div>
+      <progress id="progress" max="100" value="0"></progress>
+      <div id="status" class="status" aria-live="polite">Edit code or insert poses, then select <strong>Play code</strong>.</div>
+      <div class="stats"><span id="seqInfo">No sequence built</span><span id="currentInfo">Waiting</span></div>
+      <h3>Sequence preview <span class="small">(click a row to inspect that pose)</span></h3>
+      <div class="timeline" id="timeline"><p style="padding:10px;color:#64748b">Click <strong>Check / build sequence</strong> to list commands.</p></div>
+
+      <div class="help">
+        <strong>Supported commands:</strong> <code>Servo ...;</code>, <code>attach()</code>, <code>write()</code>, <code>delay()</code>, integer/float variables, assignments, and simple arithmetic. Unsupported code such as <code>if</code>, <code>for</code>, custom functions, and sensor reads will trigger a clear error instead of a fake simulation.
+      </div>
+    </div>
+  </section>
+</main>
+<footer>
+  This educational kinematic visualizer uses two 140-unit links. Playback interpolates toward servo targets during delays; it does not model physical servo speed or ground contact. The small panels project the same recorded 3D foot path onto XY, XZ, and YZ. Orange marks the foot; teal and purple mark the thigh and shin.
+</footer>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const sample = `// Three servos move one 3-DOF leg: hip, hipSide, and knee.
+// Test with the leg lifted off the table first.
+#include <Servo.h>
+Servo hip;
+Servo hipSide;
+Servo knee;
+
+void setup() {
+  hip.attach(A0);
+  hipSide.attach(A2);
+  knee.attach(A1);
+  hip.write(90);
+  hipSide.write(90);
+  knee.write(90);
+  delay(700);
+}
+
+void loop() {
+  knee.write(65);      // Lift the foot
+  delay(350);
+  hip.write(110);      // Swing the foot forward
+  delay(350);
+  hipSide.write(115);  // Move leg outward slightly
+  delay(350);
+  knee.write(90);      // Lower the foot
+  delay(350);
+  hip.write(90);       // Return hip to neutral
+  hipSide.write(90);   // Center the leg again
+  delay(350);
+}
+`;
+$('editor').value = sample;
+
+let pose = {hip:90, hipSide:90, knee:90};
+let trail = [];
+let sequence = [];
+let program=null, execution=null, setupEvents=[], loopStartIndex=0;
+const neutralPose=()=>({hip:90, hipSide:90, knee:90});
+const LINK_LENGTH=140, REACH=2*LINK_LENGTH, MAX_TRAIL_POINTS=2000;
+let startPose = {hip:90, hipSide:90, knee:90};
+let running=false, paused=false, visibleIndex=-1, runIndex=0, phaseTime=0, lastFrame=0;
+let targetPose={hip:90, hipSide:90, knee:90}, tweenStart={hip:90, hipSide:90, knee:90}, tweenActive=false;
+function deg2rad(d){ return d*Math.PI/180; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function setStatus(msg,type=''){ $('status').textContent=msg; $('status').className='status'+(type?(' '+type):''); }
+function rotateX(v,a){ const c=Math.cos(a), s=Math.sin(a); return [v[0], v[1]*c - v[2]*s, v[1]*s + v[2]*c]; }
+function rotateY(v,a){ const c=Math.cos(a), s=Math.sin(a); return [v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c]; }
+function rotateZ(v,a){ const c=Math.cos(a), s=Math.sin(a); return [v[0]*c - v[1]*s, v[0]*s + v[1]*c, v[2]]; }
+function add(a,b){ return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+
+// Right-handed world: x sideways, y down, z forward. Lateral joint is proximal;
+// flexion and knee axes rotate with it. Servo signs encode mounting orientation.
+function computeLeg(p, mode=$('mode3').value){
+  const L1=LINK_LENGTH, L2=LINK_LENGTH;
+  const hipPitch = deg2rad(p.hip - 90);
+  const lateral = deg2rad(-(p.hipSide - 90));
+  const kneeBend = deg2rad(90 - p.knee);
+
+  let thigh = [0, L1, 0];
+  let shin = [0, L2, 0];
+  thigh = rotateX(thigh, hipPitch);
+  shin  = rotateX(shin, hipPitch + kneeBend);
+  if(mode==='abduction'){ thigh = rotateZ(thigh, lateral); shin = rotateZ(shin, lateral); }
+  else { thigh = rotateY(thigh, lateral); shin = rotateY(shin, lateral); }
+
+  const hipPt = [0,0,0];
+  const kneePt = add(hipPt, thigh);
+  const footPt = add(kneePt, shin);
+  return {hipPt,kneePt,footPt};
+}
+
+const canvas = $('scene');
+const ctx = canvas.getContext('2d');
+const initialCamera = {yaw:-0.8,pitch:0.45,zoom:1,panX:0,panY:0};
+let camera={...initialCamera};
+const views={iso:{yaw:-0.8,pitch:0.45},xy:{yaw:0,pitch:0},xz:{yaw:0,pitch:Math.PI/2},yz:{yaw:Math.PI/2,pitch:0}};
+function setCameraView(name){ const v=views[name]; if(!v) return; camera={...camera,yaw:v.yaw,pitch:v.pitch,zoom:1,panX:0,panY:0}; updateCameraUi(name); drawAll(); }
+function updateCameraUi(selected){ document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('selected',b.dataset.view===selected)); $('cameraState').textContent=`Zoom ${Math.round(camera.zoom*100)}%`; }
+function detachView(){ updateCameraUi(null); }
+function project3D(pt){ let [x,y,z]=pt; const cy=Math.cos(camera.yaw), sy=Math.sin(camera.yaw); const xx=x*cy + z*sy, zz=-x*sy + z*cy; const cp=Math.cos(camera.pitch), sp=Math.sin(camera.pitch); const yy=y*cp - zz*sp; const scale=Math.min(canvas.width-80,canvas.height-100)/(2*REACH)*camera.zoom; return {x:canvas.width/2 + camera.panX + xx*scale, y:canvas.height/2 + camera.panY + yy*scale}; }
+
+// input / camera controls
+const pointers=new Map(); let priorGesture=null;
+function pointerPosition(e){ const rect=canvas.getBoundingClientRect(); return {x:(e.clientX-rect.left)*canvas.width/rect.width, y:(e.clientY-rect.top)*canvas.height/rect.height, button:e.button,shift:e.shiftKey}; }
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',e=>{ e.preventDefault(); canvas.setPointerCapture(e.pointerId); const p=pointerPosition(e); p.mode=(e.button===2||e.button===1||e.shiftKey)?'pan':'orbit'; pointers.set(e.pointerId,p); priorGesture=null; canvas.classList.add('dragging'); });
+canvas.addEventListener('pointermove',e=>{ if(!pointers.has(e.pointerId)) return; e.preventDefault(); const p=pointerPosition(e); if(pointers.size===1){ const prev=pointers.get(e.pointerId), dx=p.x-prev.x, dy=p.y-prev.y; if(prev.mode==='pan'){ camera.panX+=dx; camera.panY+=dy; } else { camera.yaw+=dx*.008; camera.pitch=clamp(camera.pitch+dy*.008,-Math.PI/2,Math.PI/2);} pointers.set(e.pointerId,{...p,mode:prev.mode}); priorGesture=null; } else { pointers.set(e.pointerId,{...p,mode:'pan'}); const arr=[...pointers.values()].slice(0,2); const mid={x:(arr[0].x+arr[1].x)/2,y:(arr[0].y+arr[1].y)/2}; const dist=Math.hypot(arr[0].x-arr[1].x,arr[0].y-arr[1].y); if(priorGesture){ camera.panX+=mid.x-priorGesture.x; camera.panY+=mid.y-priorGesture.y; if(priorGesture.dist>5) camera.zoom=clamp(camera.zoom*(dist/priorGesture.dist),.25,4);} priorGesture={...mid,dist}; } detachView(); drawAll(); });
+function releasePointer(e){ pointers.delete(e.pointerId); priorGesture=null; if(!pointers.size) canvas.classList.remove('dragging'); }
+canvas.addEventListener('pointerup',releasePointer); canvas.addEventListener('pointercancel',releasePointer);
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); const before=camera.zoom; camera.zoom=clamp(camera.zoom*Math.exp(-e.deltaY*.0015),.25,4); const p=pointerPosition(e), cx=canvas.width/2+camera.panX, cy=canvas.height/2+camera.panY; const k=camera.zoom/before; camera.panX+=(p.x-cx)*(1-k); camera.panY+=(p.y-cy)*(1-k); detachView(); drawAll(); },{passive:false});
+canvas.addEventListener('dblclick',()=>setCameraView('iso'));
+document.querySelectorAll('.view-btn').forEach(b=>b.addEventListener('click',()=>setCameraView(b.dataset.view))); $('resetCamera').onclick=()=>setCameraView('iso');
+
+function updateModeHelp(){
+  const mode=$('mode3').value;
+  if(mode==='abduction'){
+    $('modeHelp').innerHTML='<strong>Abduction/adduction:</strong> the lateral joint rotates about world <strong>Z</strong> (forward). Hip flexion and knee bend about the rotated local X axis. Above 90°, the lateral servo moves a hanging leg toward +X; hip flexion above 90° and knee below 90° bend toward +Z when lateral is neutral.';
+    $('projectionExplain').innerHTML='<strong>Try one joint at a time:</strong> hold hip flexion and knee fixed, then move the lateral slider. The foot traces an XY arc with constant Z, so its XZ projection is a straight segment. Combined joint motion can produce other shapes.';
+  } else {
+    $('modeHelp').innerHTML='<strong>Yaw/steering:</strong> the lateral joint rotates about world <strong>Y</strong> (down). Hip flexion and knee bend about the rotated local X axis. Above 90°, the yaw servo turns a forward-displaced foot toward −X.';
+    $('projectionExplain').innerHTML='<strong>Try a bent pose:</strong> hold hip and knee fixed, then move yaw. A foot away from the Y axis sweeps an XZ arc; a straight vertical leg stays still. XZ views show +Z upward.';
+  }
+}
+$('mode3').addEventListener('change',()=>{ stop(); trail=[]; updateModeHelp(); drawAll(); setStatus('Joint interpretation changed. Playback stopped; the sketch is ready to replay.'); });
+
+function drawGrid3D(){ ctx.save(); ctx.strokeStyle='#e6edf3'; ctx.lineWidth=1; for(let i=-260;i<=260;i+=40){ const a=project3D([i,300,-260]), b=project3D([i,300,260]); const c=project3D([-260,300,i]), d=project3D([260,300,i]); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(c.x,c.y); ctx.lineTo(d.x,d.y); ctx.stroke(); } ctx.restore(); }
+function drawAxes3D(){
+  const origin=project3D([0,0,0]), anchor={x:70,y:canvas.height-65};
+  const axes=[[[60,0,0],'#c33','+x'],[[0,60,0],'#2e8b57','+y'],[[0,0,60],'#3b82f6','+z']];
+  ctx.font='12px system-ui,sans-serif';
+  axes.forEach(([axis,col,label])=>{
+    const q=project3D(axis), dx=(q.x-origin.x)/camera.zoom, dy=(q.y-origin.y)/camera.zoom;
+    if(Math.hypot(dx,dy)<8)return;
+    const p={x:anchor.x+dx,y:anchor.y+dy};
+    ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(anchor.x,anchor.y);ctx.lineTo(p.x,p.y);ctx.stroke();ctx.fillText(label,p.x+4,p.y-4);
+  });
+}
+function drawJointLabels(H,K,F){
+  const placed=[], points=[];
+  ctx.font='600 12px system-ui';
+  // If joints overlap in a projection, show only the foremost foot label.
+  for(const [p,label,color,width] of [[F,'Foot','#b7671e',30],[K,'Knee','#7156a5',34],[H,'Hip','#0b7d87',24]]){
+    if(points.some(q=>Math.hypot(p.x-q.x,p.y-q.y)<25))continue;
+    points.push(p);
+    for(const [dx,dy] of [[18,-8],[-width-18,-8],[18,22]]){
+      const x=p.x+dx,y=p.y+dy, box={x,y:y-13,w:width,h:16};
+      if(x<10||x+width>canvas.width-10||y<45||y>canvas.height-10)continue;
+      if(x+width>canvas.width-186&&y<115)continue;
+      if(placed.some(b=>box.x<b.x+b.w&&box.x+box.w>b.x&&box.y<b.y+b.h&&box.y+box.h>b.y))continue;
+      ctx.fillStyle=color;ctx.fillText(label,x,y);placed.push(box);break;
+    }
+  }
+}
+
+function drawMainScene(){
+  const {hipPt,kneePt,footPt} = computeLeg(pose);
+  ctx.clearRect(0,0,canvas.width,canvas.height); ctx.fillStyle='#fbfdff'; ctx.fillRect(0,0,canvas.width,canvas.height); drawGrid3D();
+  ctx.fillStyle='#688198'; ctx.font='12px system-ui'; ctx.fillText('X sideways · Y down · Z forward',16,25);
+  const boxPts = [[-70,-30,-40],[70,-30,-40],[70,15,-40],[-70,15,-40],[-70,-30,40],[70,-30,40],[70,15,40],[-70,15,40]].map(project3D); const faces=[[0,1,2,3],[1,5,6,2],[0,4,5,1],[4,5,6,7],[0,4,7,3],[3,2,6,7]];
+  faces.forEach((f,idx)=>{ ctx.beginPath(); ctx.moveTo(boxPts[f[0]].x,boxPts[f[0]].y); for(let i=1;i<f.length;i++) ctx.lineTo(boxPts[f[i]].x,boxPts[f[i]].y); ctx.closePath(); ctx.fillStyle= idx===3 ? '#d6e4ef' : idx===1 ? '#cbdce8' : '#e8f1f7'; ctx.strokeStyle='#97adbf'; ctx.lineWidth=1.5; ctx.fill(); ctx.stroke(); });
+  const H=project3D(hipPt), K=project3D(kneePt), F=project3D(footPt);
+  if($('showTrail').checked && trail.length>1){ ctx.beginPath(); ctx.strokeStyle='#efb98b'; ctx.lineWidth=2.2; trail.forEach((pt,i)=>{ const p=project3D(pt); if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);}); ctx.stroke(); }
+  ctx.strokeStyle='#0b7d87'; ctx.lineWidth=18; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(H.x,H.y); ctx.lineTo(K.x,K.y); ctx.stroke(); ctx.strokeStyle='#7156a5'; ctx.lineWidth=16; ctx.beginPath(); ctx.moveTo(K.x,K.y); ctx.lineTo(F.x,F.y); ctx.stroke();
+  [[H,'#0b7d87',14],[K,'#7156a5',12],[F,'#ef8b35',10]].forEach(([p,col,r])=>{ ctx.beginPath(); ctx.fillStyle='#fff'; ctx.strokeStyle=col; ctx.lineWidth=5; ctx.arc(p.x,p.y,r,0,2*Math.PI); ctx.fill(); ctx.stroke(); }); ctx.beginPath(); ctx.fillStyle='#ef8b35'; ctx.arc(F.x,F.y,8,0,2*Math.PI); ctx.fill();
+  drawJointLabels(H,K,F);
+  drawAxes3D();
+
+  const bx = canvas.width - 186, by = 34, bw = 154, bh = 74;
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.strokeStyle = '#c8d6e3';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill(); ctx.stroke();
+  ctx.font = '700 12px system-ui'; ctx.fillStyle = '#29465f'; ctx.fillText('Current angles', bx+12, by+18);
+  ctx.font = '12px system-ui';
+  ctx.fillStyle = '#0b7d87'; ctx.fillText(`Hip: ${Math.round(pose.hip)}°`, bx+12, by+36);
+  ctx.fillStyle = '#2f7d58'; ctx.fillText(`Hip lateral: ${Math.round(pose.hipSide)}°`, bx+12, by+52);
+  ctx.fillStyle = '#7156a5'; ctx.fillText(`Knee: ${Math.round(pose.knee)}°`, bx+12, by+68);
+}
+
+// Screen orientation matches the main orthographic presets: XZ has +z upward.
+function planeProject(pt,plane,w,h,pad=22){
+  const [u,v,ul,vl]=plane==='xy' ? [pt[0],pt[1],'x','y'] :
+    plane==='xz' ? [pt[0],-pt[2],'x','z'] : [pt[2],pt[1],'z','y'];
+  const scale=Math.min(w-2*pad,h-2*pad)/(2*REACH);
+  return {x:w/2+u*scale,y:h/2+v*scale,ul,vl,scale};
+}
+function drawProjection(canvasId,plane){
+  const c=$(canvasId), cx=c.getContext('2d'), w=c.width, h=c.height;
+  const {hipPt,kneePt,footPt}=computeLeg(pose);
+  const H=planeProject(hipPt,plane,w,h), K=planeProject(kneePt,plane,w,h), F=planeProject(footPt,plane,w,h);
+  cx.clearRect(0,0,w,h); cx.fillStyle='#fbfdff'; cx.fillRect(0,0,w,h);
+  cx.strokeStyle='#e7edf4'; cx.lineWidth=1;
+  for(let i=-REACH;i<=REACH;i+=40){
+    const d=i*H.scale;
+    cx.beginPath(); cx.moveTo(w/2+d,22); cx.lineTo(w/2+d,h-22); cx.stroke();
+    cx.beginPath(); cx.moveTo(22,h/2+d); cx.lineTo(w-22,h/2+d); cx.stroke();
+  }
+  cx.strokeStyle='#9fb1c3'; cx.lineWidth=1.3;
+  cx.beginPath(); cx.moveTo(18,h/2); cx.lineTo(w-18,h/2); cx.moveTo(w/2,18); cx.lineTo(w/2,h-18); cx.stroke();
+  cx.font='11px system-ui'; cx.fillStyle='#5f7286';
+  cx.fillText('+'+H.ul,w-23,h/2-7);
+  cx.fillText('+'+H.vl,w/2+7,plane==='xz'?16:h-7);
+  if($('showTrail').checked && trail.length>1){
+    cx.beginPath(); cx.strokeStyle='#d58949'; cx.lineWidth=2;
+    trail.forEach((pt,i)=>{const q=planeProject(pt,plane,w,h); if(i===0)cx.moveTo(q.x,q.y); else cx.lineTo(q.x,q.y);}); cx.stroke();
+  }
+  cx.lineCap='round'; cx.strokeStyle='#0b7d87'; cx.lineWidth=7;
+  cx.beginPath(); cx.moveTo(H.x,H.y); cx.lineTo(K.x,K.y); cx.stroke();
+  cx.strokeStyle='#7156a5'; cx.lineWidth=6; cx.beginPath(); cx.moveTo(K.x,K.y); cx.lineTo(F.x,F.y); cx.stroke();
+  [[H,'#0b7d87',6],[K,'#7156a5',5],[F,'#ef8b35',4]].forEach(([q,col,r])=>{
+    cx.beginPath(); cx.fillStyle='#fff'; cx.strokeStyle=col; cx.lineWidth=2; cx.arc(q.x,q.y,r,0,2*Math.PI); cx.fill(); cx.stroke();
+  });
+  cx.beginPath(); cx.fillStyle='#ef8b35'; cx.arc(F.x,F.y,3,0,2*Math.PI); cx.fill();
+}
+
+function updateLabels(){
+  $('hipPitchVal').textContent=Math.round(pose.hip)+'°';
+  $('hipSideVal').textContent=Math.round(pose.hipSide)+'°';
+  $('kneeVal').textContent=Math.round(pose.knee)+'°';
+  $('poseStat').textContent='Command: hip '+Math.round(pose.hip)+'°, hipSide '+Math.round(pose.hipSide)+'°, knee '+Math.round(pose.knee)+'°';
+  const foot=computeLeg(pose).footPt;
+  $('footStat').textContent='Foot: x '+Math.round(foot[0])+', y '+Math.round(foot[1])+', z '+Math.round(foot[2])+' (model units)';
+}
+function drawAll(){ updateLabels(); drawMainScene(); drawProjection('xyView','xy'); drawProjection('xzView','xz'); drawProjection('yzView','yz'); $('cameraState').textContent='Zoom '+Math.round(camera.zoom*100)+'%'; }
+function recordFoot(){
+  if(!$('showTrail').checked) return;
+  const foot=computeLeg(pose).footPt, last=trail[trail.length-1];
+  if(last && Math.hypot(...foot.map((v,i)=>v-last[i]))<0.5) return;
+  trail.push(foot);
+  if(trail.length>MAX_TRAIL_POINTS) trail.splice(0,trail.length-MAX_TRAIL_POINTS);
+}
+function setPose(newPose,record=true){
+  pose=Object.fromEntries(['hip','hipSide','knee'].map(k=>[k,clamp(newPose[k],0,180)]));
+  $('hipPitch').value=pose.hip; $('hipSide').value=pose.hipSide; $('knee').value=pose.knee;
+  if(record) recordFoot(); drawAll();
+}
+function manualPose(p){ stop(); visibleIndex=-1; highlight(-1); setPose(p); setStatus('Pose previewed. Insert commands to record it in the sketch.'); }
+['hipPitch','hipSide','knee'].forEach(id=>$(id).addEventListener('input',()=>manualPose({hip:+$('hipPitch').value,hipSide:+$('hipSide').value,knee:+$('knee').value})));
+$('neutral').onclick=()=>manualPose(neutralPose());
+$('clearTrail').onclick=()=>{trail=[]; drawAll();};
+$('showTrail').onchange=()=>{trail=[]; recordFoot(); drawAll();};
+
+let insertionSelection=null;
+function rememberSelection(){const e=$('editor'); insertionSelection={start:e.selectionStart,end:e.selectionEnd};}
+['select','click','keyup','blur'].forEach(event=>$('editor').addEventListener(event,rememberSelection));
+function insertSnippet(snippet){
+  const editor=$('editor'), text=editor.value;
+  let start,end;
+  if(insertionSelection){({start,end}=insertionSelection);}
+  else {try{start=end=bodyOf(stripComments(text),'loop').end-1;}catch(e){setStatus(e.message,'error');return;}}
+  const prefix=start>0 && text[start-1]!=='\n'?'\n':'';
+  const inserted=prefix+snippet+'\n';
+  editor.value=text.slice(0,start)+inserted+text.slice(end);
+  editor.focus(); editor.setSelectionRange(start+inserted.length,start+inserted.length); rememberSelection();
+  invalidate(); setStatus('Pose added to the sketch. Build or play to preview it.');
+}
+function insertAll(){
+  const d=Number($('wait').value);
+  if(!Number.isInteger(d)||d<0||d>10000){setStatus('Choose a whole-number delay from 0 to 10000 ms.','error');return;}
+  insertSnippet('  hip.write('+Math.round(pose.hip)+');\n  hipSide.write('+Math.round(pose.hipSide)+');\n  knee.write('+Math.round(pose.knee)+');\n  delay('+d+');');
+}
+$('insertAll').onclick=insertAll;
+$('insertHipPitch').onclick=()=>insertSnippet('  hip.write('+Math.round(pose.hip)+');');
+$('insertHipSide').onclick=()=>insertSnippet('  hipSide.write('+Math.round(pose.hipSide)+');');
+$('insertKnee').onclick=()=>insertSnippet('  knee.write('+Math.round(pose.knee)+');');
+$('resetCode').onclick=()=>{ stop(); $('editor').value=sample; insertionSelection=null; invalidate(); setStatus('Example sketch restored.'); }; $('copy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('editor').value); setStatus('Sketch copied to clipboard.','ok'); } catch(e){ $('editor').focus(); $('editor').select(); document.execCommand('copy'); setStatus('Sketch selected and copy requested.'); } }; $('download').onclick=()=>{ const blob=new Blob([$('editor').value],{type:'text/plain;charset=utf-8'}); const a=document.createElement('a'); const url=URL.createObjectURL(blob); a.href=url; a.download='Three_DOF_Leg_Custom.ino'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),600); }; $('speed').oninput=()=>$('speedVal').textContent = Number($('speed').value).toFixed(2).replace(/\.?0+$/,'') + '×';
+
+function stripComments(source){
+  return source.replace(/\/\*[\s\S]*?\*\//g,m=>m.replace(/[^\n]/g,' ')).replace(/\/\/[^\n]*/g,m=>' '.repeat(m.length));
+}
+function lineNumber(src,pos){return src.slice(0,pos).split('\n').length;}
+function bodyOf(src,name){
+  const m=new RegExp('\\bvoid\\s+'+name+'\\s*\\(\\s*(?:void\\s*)?\\)\\s*\\{').exec(src);
+  if(!m) throw Error('Could not find void '+name+'() { ... }');
+  const start=m.index+m[0].length;
+  let depth=1;
+  for(let i=start;i<src.length;i++){
+    if(src[i]==='{')depth++;
+    if(src[i]==='}')depth--;
+    if(depth===0)return {text:src.slice(start,i),start,opening:m.index,end:i+1};
+  }
+  throw Error('Missing closing brace in '+name+'().');
+}
+function fail(line,message){throw Error('Line '+line+': '+message);}
+function lookup(env,name,line){
+  const binding=env.locals.get(name)||env.globals.get(name);
+  if(!binding)fail(line,'variable "'+name+'" was not defined.');
+  return binding;
+}
+// A small arithmetic parser; sketch text is never passed to eval or Function.
+function evaluate(expression,env,line){
+  const toks=expression.match(/\d+(?:\.\d*)?|\.\d+|[A-Za-z_]\w*|[()+\-*/]/g)||[];
+  if(toks.join('')!==expression.replace(/\s/g,''))fail(line,'unsupported expression "'+expression+'".');
+  let i=0;
+  function atom(){
+    const t=toks[i++];
+    if(t==='('){const v=addExpr();if(toks[i++]!==')')fail(line,"missing ')'.");return v;}
+    if(t==='-'||t==='+'){const v=atom();return {value:t==='-'?-v.value:v.value,integer:v.integer};}
+    if(/^(?:\d|\.)/.test(t||''))return {value:Number(t),integer:!t.includes('.')};
+    if(/^[A-Za-z_]\w*$/.test(t||'')){const b=lookup(env,t,line);return {value:b.value,integer:b.integer};}
+    fail(line,'invalid expression "'+expression+'".');
+  }
+  function combine(a,b,op){
+    const integer=a.integer&&b.integer;
+    if(op==='/'&&b.value===0)fail(line,'division by zero.');
+    let value=op==='+'?a.value+b.value:op==='-'?a.value-b.value:op==='*'?a.value*b.value:a.value/b.value;
+    if(op==='/'&&integer)value=Math.trunc(value);
+    return {value,integer};
+  }
+  function mult(){let v=atom();while(toks[i]==='*'||toks[i]==='/'){const op=toks[i++];v=combine(v,atom(),op);}return v;}
+  function addExpr(){let v=mult();while(toks[i]==='+'||toks[i]==='-'){const op=toks[i++];v=combine(v,mult(),op);}return v;}
+  const result=addExpr();
+  if(i!==toks.length||!Number.isFinite(result.value))fail(line,'invalid or non-finite expression "'+expression+'".');
+  return result;
+}
+function roleFromServo(name){
+  const n=name.toLowerCase();
+  if(n.includes('knee'))return 'knee';
+  if(n.includes('side')||n.includes('abd')||n.includes('yaw'))return 'hipSide';
+  if(n.includes('hip'))return 'hip';
+  return null;
+}
+function statements(text,offset,src){
+  const parts=text.split(';'), result=[];
+  let cursor=0;
+  parts.forEach((part,i)=>{
+    const s=part.trim(), line=lineNumber(src,offset+cursor+Math.max(0,part.search(/\S/)));
+    cursor+=part.length+1;
+    if(!s)return;
+    if(i===parts.length-1)fail(line,'missing semicolon or unsupported trailing code: "'+s.slice(0,50)+'".');
+    if(/[{}]/.test(s))fail(line,'nested blocks, control flow, and custom functions are not supported.');
+    result.push({text:s,line});
+  });
+  return result;
+}
+function declaration(s,line){
+  const m=/^(const\s+)?(int|float|double|long|unsigned\s+int)\s+([A-Za-z_]\w*)\s*=\s*(.+)$/.exec(s);
+  return m ? {type:'declare',name:m[3],expression:m[4],constant:!!m[1],integer:!['float','double'].includes(m[2]),unsigned:m[2].startsWith('unsigned'),line} : null;
+}
+function parse(){
+  const source=$('editor').value;
+  if(source.length>200000)throw Error('Sketch is too large (maximum 200,000 characters).');
+  const src=stripComments(source), setup=bodyOf(src,'setup'), loop=bodyOf(src,'loop');
+  // Preserve character positions so include lines cannot shift function boundaries.
+  let outside=src.replace(/^[ \t]*#include[^\n]*/gm,m=>m.replace(/[^\n]/g,' '));
+  for(const part of [setup,loop])outside=outside.slice(0,part.opening)+outside.slice(part.opening,part.end).replace(/[^\n]/g,' ')+outside.slice(part.end);
+  const servos=new Map(), globals=[];
+  for(const {text:s,line} of statements(outside,0,src)){
+    const m=/^Servo\s+([A-Za-z_]\w*)$/.exec(s);
+    if(m){
+      if(servos.has(m[1]))fail(line,'duplicate servo declaration "'+m[1]+'".');
+      const role=roleFromServo(m[1]);
+      if(!role)fail(line,'use a servo name containing hip, hipSide/abd/yaw, or knee.');
+      if([...servos.values()].includes(role))fail(line,'more than one servo is mapped to '+role+'.');
+      servos.set(m[1],role); continue;
+    }
+    const d=declaration(s,line);
+    if(!d)fail(line,'unsupported statement outside setup()/loop(): "'+s.slice(0,60)+'".');
+    globals.push(d);
+  }
+  function compile(body){
+    return statements(body.text,body.start,src).map(({text:s,line})=>{
+      let m;
+      const d=declaration(s,line); if(d)return d;
+      if((m=/^([A-Za-z_]\w*)\s*=\s*(.+)$/.exec(s)))return {type:'assign',name:m[1],expression:m[2],line};
+      if((m=/^([A-Za-z_]\w*)\.write\s*\((.+)\)$/.exec(s))){
+        if(!servos.has(m[1]))fail(line,'servo "'+m[1]+'" must be declared first.');
+        return {type:'write',object:m[1],role:servos.get(m[1]),expression:m[2],line};
+      }
+      if((m=/^delay\s*\((.+)\)$/.exec(s)))return {type:'delay',expression:m[1],line};
+      if((m=/^([A-Za-z_]\w*)\.attach\s*\(\s*([A-Za-z_]\w*|\d+)\s*\)$/.exec(s))){
+        if(!servos.has(m[1]))fail(line,'servo "'+m[1]+'" must be declared first.');
+        return {type:'ignore',line};
+      }
+      if(/^Serial\.begin\s*\(\s*\d+\s*\)$/.test(s))return {type:'ignore',line};
+      fail(line,'unsupported command "'+s.slice(0,65)+'".');
+    });
+  }
+  const compiled={globals,setup:compile(setup),loop:compile(loop)};
+  if(globals.length+compiled.setup.length+compiled.loop.length>1000)throw Error('Sketch contains more than 1000 statements.');
+  const prepared=prepareProgram(compiled);
+  if(!prepared.setupEvents.length&&!prepared.loopEvents.length)throw Error('Sketch contains no write() or delay() commands.');
+  return {program:compiled,...prepared};
+}
+function assignValue(binding,value,line){
+  binding.value=binding.integer?Math.trunc(value):value;
+  if(binding.unsigned && binding.value<0)fail(line,'negative unsigned values are not supported.');
+}
+function executeBlock(block,env,phase,globalScope=false){
+  env.locals=new Map();
+  const events=[];
+  for(const op of block){
+    if(op.type==='ignore')continue;
+    if(op.type==='declare'){
+      const scope=globalScope?env.globals:env.locals;
+      if(scope.has(op.name))fail(op.line,'duplicate variable "'+op.name+'".');
+      const value=evaluate(op.expression,env,op.line).value;
+      const binding={constant:op.constant,integer:op.integer,unsigned:op.unsigned,value:0};
+      assignValue(binding,value,op.line); scope.set(op.name,binding); continue;
+    }
+    if(op.type==='assign'){
+      const binding=lookup(env,op.name,op.line);
+      if(binding.constant)fail(op.line,'cannot assign to const variable "'+op.name+'".');
+      assignValue(binding,evaluate(op.expression,env,op.line).value,op.line); continue;
+    }
+    const value=evaluate(op.expression,env,op.line).value;
+    if(op.type==='write'){
+      if(value<0||value>180)fail(op.line,'servo.write angle must be between 0 and 180.');
+      const angle=Math.trunc(value); env.pose[op.role]=angle;
+      events.push({type:'write',role:op.role,value:angle,pose:{...env.pose},ms:0,line:op.line,phase,description:op.object+'.write('+angle+')'});
+    }else{
+      if(value<0||value>120000)fail(op.line,'delay must be 0–120000 ms.');
+      const ms=Math.trunc(value);
+      events.push({type:'delay',pose:{...env.pose},ms,line:op.line,phase,description:'delay('+ms+')'});
+    }
+  }
+  return events;
+}
+function prepareProgram(compiled){
+  const execution={globals:new Map(),locals:new Map(),pose:neutralPose()};
+  executeBlock(compiled.globals,execution,'global',true);
+  const setupEvents=executeBlock(compiled.setup,execution,'setup');
+  const initial={...execution.pose};
+  const loopEvents=executeBlock(compiled.loop,execution,'loop');
+  return {execution,setupEvents,loopEvents,initial};
+}
+function invalidate(){
+  stop(); sequence=[]; program=null; execution=null; visibleIndex=-1;
+  $('seqInfo').textContent='Sketch changed — rebuild';
+  $('timeline').innerHTML='<p style="padding:10px;color:#64748b">Build the sequence to list commands.</p>';
+  $('progress').value=0;
+}
+$('editor').addEventListener('input',()=>{rememberSelection();invalidate();});
+function highlight(index){document.querySelectorAll('#timeline tr[data-index]').forEach(row=>row.classList.toggle('active',Number(row.dataset.index)===index));}
+function renderTimeline(){
+  const total=sequence.reduce((sum,e)=>sum+e.ms,0);
+  $('seqInfo').textContent=sequence.length+' commands · '+total+' ms (setup + current loop)';
+  const html=['<table><thead><tr><th>#</th><th>Phase</th><th>Line</th><th>Command</th><th>Hip</th><th>Lateral</th><th>Knee</th></tr></thead><tbody>'];
+  sequence.forEach((e,i)=>html.push('<tr data-index="'+i+'"><td>'+(i+1)+'</td><td>'+e.phase+'</td><td>'+e.line+'</td><td>'+e.description+'</td><td>'+e.pose.hip+'°</td><td>'+e.pose.hipSide+'°</td><td>'+e.pose.knee+'°</td></tr>'));
+  html.push('</tbody></table>'); $('timeline').innerHTML=html.join('');
+  document.querySelectorAll('#timeline tr[data-index]').forEach(row=>row.onclick=()=>{
+    stop(); const i=Number(row.dataset.index); visibleIndex=i; setPose(sequence[i].pose); highlight(i);
+    $('progress').value=(i+1)*100/sequence.length;
+    setStatus('Previewing '+sequence[i].phase+' command '+(i+1)+': '+sequence[i].description);
+  });
+}
+function installExecution(prepared){
+  execution=prepared.execution; setupEvents=prepared.setupEvents;
+  loopStartIndex=setupEvents.length; sequence=setupEvents.concat(prepared.loopEvents);
+  startPose=neutralPose(); visibleIndex=-1; runIndex=0; phaseTime=0; tweenActive=false;
+  targetPose=neutralPose(); tweenStart=neutralPose(); renderTimeline();
+}
+function build(){
+  stop();
+  try{
+    const result=parse(); program=result.program; installExecution(result);
+    trail=[]; setPose(startPose,false); $('progress').value=0; $('currentInfo').textContent='Ready';
+    setStatus('Sketch checked. Setup plays once; each loop reevaluates commands and variables.','ok'); return true;
+  }catch(e){invalidate();setStatus(e.message,'error');return false;}
+}
+$('build').onclick=build;
+function stop(report=true){
+  running=false; paused=false; $('pause').disabled=true; $('pause').textContent='❚❚ Pause'; lastFrame=0;
+  if(report)$('currentInfo').textContent='Stopped';
+}
+function start(){
+  if(!program && !build())return;
+  stop(false);
+  try{installExecution(prepareProgram(program));}catch(e){setStatus(e.message,'error');return;}
+  trail=[];setPose(startPose,true);lastFrame=0;running=true;paused=false;
+  $('pause').disabled=false;$('progress').value=0;setStatus('Playing setup, then loop.','ok');
+}
+$('play').onclick=start;
+$('pause').onclick=()=>{
+  if(!running)return;paused=!paused;$('pause').textContent=paused?'▶ Resume':'❚❚ Pause';lastFrame=0;
+  setStatus(paused?'Paused.':'Resumed playback.');
+};
+$('stop').onclick=()=>{stop();setStatus('Playback stopped.');};
+$('step').onclick=()=>{
+  if(!program&&!build())return;
+  stop(false);
+  if(visibleIndex<0||visibleIndex>=sequence.length-1)visibleIndex=0;else visibleIndex++;
+  const e=sequence[visibleIndex];setPose(e.pose);highlight(visibleIndex);
+  $('progress').value=(visibleIndex+1)*100/sequence.length;
+  $('currentInfo').textContent=e.phase+' · line '+e.line;
+  setStatus('Command '+(visibleIndex+1)+'/'+sequence.length+': '+e.description);
+};
+function animate(t){
+  requestAnimationFrame(animate);
+  if(!running||paused)return;
+  if(!lastFrame)lastFrame=t;
+  phaseTime+=Math.min(70,t-lastFrame)*Number($('speed').value);lastFrame=t;
+  let guard=0;
+  try{
+    while(running&&guard++<1003){
+      if(runIndex>=sequence.length){
+        // Apply trailing writes even in a loop with no delay.
+        setPose(targetPose,true);
+        if($('repeat').checked){
+          const next=executeBlock(program.loop,execution,'loop');
+          if(next.length){
+            sequence=setupEvents.concat(next);runIndex=loopStartIndex;visibleIndex=-1;tweenActive=false;
+            renderTimeline();break;
+          }
+        }
+        stop(false);$('progress').value=100;$('currentInfo').textContent='Finished';
+        setStatus('Setup and one complete loop finished.','ok');break;
+      }
+      const e=sequence[runIndex];
+      if(visibleIndex!==runIndex){
+        visibleIndex=runIndex;highlight(runIndex);
+        $('currentInfo').textContent=e.phase+' · line '+e.line+': '+e.description;
+      }
+      if(e.type==='write'){
+        // A write changes only its own servo; other targets survive loop boundaries.
+        targetPose[e.role]=e.value;tweenActive=false;runIndex++;continue;
+      }
+      if(e.ms===0){setPose(targetPose,true);runIndex++;continue;}
+      if(!tweenActive){tweenStart={...pose};tweenActive=true;}
+      const f=Math.min(1,phaseTime/Math.min(230,e.ms)), eased=f*f*(3-2*f);
+      const blended=Object.fromEntries(['hip','hipSide','knee'].map(k=>[k,tweenStart[k]+(targetPose[k]-tweenStart[k])*eased]));
+      setPose(blended,true);
+      $('progress').value=Math.min(100,100*(runIndex+Math.min(1,phaseTime/e.ms))/sequence.length);
+      if(phaseTime>=e.ms){phaseTime-=e.ms;runIndex++;tweenActive=false;continue;}
+      break;
+    }
+  }catch(e){stop();setStatus(e.message,'error');}
+}
+requestAnimationFrame(animate);
+updateModeHelp(); setPose(pose,false); setCameraView('iso');
+// Avoid shrinking 820-pixel canvas labels to unreadable text on a phone.
+if(typeof ResizeObserver!=='undefined'){
+  new ResizeObserver(()=>{
+    const width=Math.round(canvas.getBoundingClientRect().width);
+    if(width<=0)return;
+    const logicalWidth=width<600?width:820, height=Math.max(340,Math.round(logicalWidth*560/820));
+    if(canvas.width!==logicalWidth||canvas.height!==height){canvas.width=logicalWidth;canvas.height=height;drawAll();}
+  }).observe(canvas);
+}
+})();
+</script>
+</body>
+</html>

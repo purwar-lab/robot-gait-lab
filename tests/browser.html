@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Local simulator browser checks</title>
+<style>body{font:14px system-ui;margin:16px}iframe{width:100%;height:1000px;border:1px solid #ddd}pre{white-space:pre-wrap}</style>
+<h1>Simulator browser checks</h1><pre id="results" data-status="running">Running…</pre>
+<iframe id="app" title="Simulator under test" src="../index.html"></iframe>
+<script>
+const results=document.getElementById('results'), frame=document.getElementById('app');
+frame.addEventListener('load',async()=>{
+  const w=frame.contentWindow, d=w.document, $=id=>d.getElementById(id), checks=[], errors=[];
+  w.addEventListener('error',e=>errors.push(e.message));
+  const check=(name,ok)=>{if(!ok)throw Error(name);checks.push('PASS '+name);};
+  const change=(id,value)=>{ $(id).value=value; $(id).dispatchEvent(new w.Event('input',{bubbles:true})); };
+  try{
+    check('initial neutral pose', $('footStat').textContent.includes('y 280'));
+    $('build').click();
+    check('sample builds with setup and loop',d.querySelectorAll('#timeline tbody tr').length===15 && $('status').classList.contains('ok'));
+    for(const view of ['xy','xz','yz','iso']){
+      d.querySelector('[data-view="'+view+'"]').click();
+      check(view+' preset',d.querySelector('[data-view="'+view+'"]').classList.contains('selected'));
+    }
+    change('hipPitch','110');change('hipSide','115');change('knee','65');
+    check('three sliders update coordinates', !$('footStat').textContent.includes('y 280'));
+    const scene=$('scene'), r=scene.getBoundingClientRect();
+    scene.dispatchEvent(new w.WheelEvent('wheel',{deltaY:-100,clientX:r.left+r.width/2,clientY:r.top+r.height/2,bubbles:true,cancelable:true}));
+    check('wheel zoom updates camera', $('cameraState').textContent!=='Zoom 100%');
+    $('resetCamera').click();check('reset camera', $('cameraState').textContent==='Zoom 100%');
+    const e=$('editor'), pos=e.value.indexOf('  knee.write(65)');
+    e.focus();e.setSelectionRange(pos,pos);e.dispatchEvent(new w.Event('select'));
+    $('insertAll').focus();$('insertAll').click();
+    check('insertion preserves remembered cursor',e.value.slice(pos).startsWith('  hip.write(110);'));
+    $('build').click();check('inserted code builds', d.querySelectorAll('#timeline tbody tr').length===19);
+    $('play').click();check('play enables pause',!$('pause').disabled);
+    $('pause').click();check('pause state', $('pause').textContent.includes('Resume'));
+    $('pause').click();check('resume state', $('pause').textContent.includes('Pause'));
+    change('hipPitch','120');check('manual pose stops playback',$('pause').disabled);
+    $('play').click();$('mode3').value='yaw';$('mode3').dispatchEvent(new w.Event('change'));
+    check('mode change stops playback',$('pause').disabled);
+    $('resetCode').click();$('build').click();$('step').click();
+    check('step highlights first setup command',d.querySelector('#timeline tr.active')?.dataset.index==='0');
+    $('showTrail').checked=false;$('showTrail').dispatchEvent(new w.Event('change'));
+    check('canvas renders',scene.getContext('2d').getImageData(0,0,scene.width,scene.height).data.some((v,i)=>i%4!==3&&v<100));
+    frame.style.width='360px';
+    check('mobile layout has no horizontal overflow ('+d.documentElement.scrollWidth+'/'+w.innerWidth+')',d.documentElement.scrollWidth<=w.innerWidth);
+    frame.style.width='100%';
+    check('no browser errors',errors.length===0);
+    $('mode3').value='abduction';$('mode3').dispatchEvent(new w.Event('change'));$('neutral').click();$('resetCamera').click();
+    results.textContent=checks.join('\n')+'\n'+checks.length+' browser checks passed.';results.dataset.status='passed';
+    if(new URLSearchParams(location.search).has('mobile')){
+      results.hidden=true;document.querySelector('h1').hidden=true;document.body.style.margin='0';
+      frame.style.width='360px';frame.style.height='1800px';frame.style.border='0';
+      e.blur();w.scrollTo(0,0);window.scrollTo(0,0);
+    }
+  }catch(e){results.textContent=checks.join('\n')+'\nFAIL '+e.message+'\n'+errors.join('\n');results.dataset.status='failed';}
+});
+</script></html>
